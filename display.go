@@ -87,28 +87,6 @@ func extractContent(message map[string]interface{}) []map[string]interface{} {
 	return result
 }
 
-// Extract text content from message
-func extractTextContent(message map[string]interface{}) string {
-	// Handle string content directly
-	if content, ok := message["content"].(string); ok {
-		return content
-	}
-
-	// Handle array content
-	if content, ok := message["content"].([]interface{}); ok {
-		for _, item := range content {
-			if m, ok := item.(map[string]interface{}); ok {
-				if m["type"] == "text" {
-					if text, ok := m["text"].(string); ok {
-						return text
-					}
-				}
-			}
-		}
-	}
-	return ""
-}
-
 // Get brief summary of message for compact mode
 func getMessageSummary(message map[string]interface{}) string {
 	content := extractContent(message)

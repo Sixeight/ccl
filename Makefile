@@ -32,11 +32,14 @@ lint:
 
 # Check code formatting (for CI)
 fmt-check:
+	@echo "Checking code formatting with gofumpt..."
 	@test -z "$$(go run mvdan.cc/gofumpt -l .)" || (echo "Please run 'make fmt' to format code"; exit 1)
+	@echo "Checking imports with goimports..."
+	@test -z "$$(go run golang.org/x/tools/cmd/goimports -l -local github.com/Sixeight/ccl .)" || (echo "Please run 'make fmt' to fix import formatting"; exit 1)
 
-# Run quick linting (for CI)
+# Run linting checks (for CI) - same as lint but without --fix
 lint-check:
-	@go run github.com/golangci/golangci-lint/cmd/golangci-lint run --tests=false --disable-all --enable=errcheck,govet,staticcheck
+	@go run github.com/golangci/golangci-lint/cmd/golangci-lint run
 
 # Update dependencies
 deps:

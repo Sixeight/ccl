@@ -99,6 +99,28 @@ func TestFormatTimestamp(t *testing.T) {
 	}
 }
 
+// Extract text content from message - used only in tests
+func extractTextContent(message map[string]interface{}) string {
+	// Handle string content directly
+	if content, ok := message["content"].(string); ok {
+		return content
+	}
+
+	// Handle array content
+	if content, ok := message["content"].([]interface{}); ok {
+		for _, item := range content {
+			if m, ok := item.(map[string]interface{}); ok {
+				if m["type"] == "text" {
+					if text, ok := m["text"].(string); ok {
+						return text
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func TestExtractTextContent(t *testing.T) {
 	tests := []struct {
 		name     string
