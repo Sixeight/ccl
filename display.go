@@ -202,10 +202,30 @@ func displayUserMessage(entry map[string]interface{}, timeStr, versionStr string
 		toolUseResult, _ := entry["toolUseResult"].(map[string]interface{})
 		displayToolResult(message, timeStr, versionStr, toolUseMap, toolInputMap, toolUseResult)
 	} else {
+		// Check if this is a slash command
+		isSlashCommand := false
+		contents := extractContent(message)
+		for _, content := range contents {
+			if content["type"] == "text" {
+				if text, ok := content["text"].(string); ok {
+					// Slash commands are wrapped in <command-name> tags
+					if strings.Contains(text, "<command-name>") && strings.Contains(text, "</command-name>") {
+						isSlashCommand = true
+					}
+					break
+				}
+			}
+		}
+
 		// Display as regular USER message
 		fmt.Printf("%s[%s]%s %sUSER%s",
 			color(colorGray), timeStr, versionStr,
 			color(colorBlue+colorBold), colorReset)
+
+		// Add [COMMAND] label for slash commands
+		if isSlashCommand {
+			fmt.Printf(" %s[COMMAND]%s", color(colorPurple), colorReset)
+		}
 
 		// Display content
 		if !cfg.Compact {
