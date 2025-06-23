@@ -418,10 +418,12 @@ func truncateRunes(s string, maxRunes int) string {
 func displayToolUse(tool map[string]interface{}, indent string) {
 	fmt.Printf("%s%s[Tool Use]%s", indent, color(colorYellow), colorReset)
 
-	toolName := ""
 	if name, ok := tool["name"].(string); ok {
-		toolName = name
 		fmt.Printf(" %s", name)
+		// Add MCP label for MCP tools
+		if strings.HasPrefix(name, "mcp__") {
+			fmt.Printf(" %s(MCP)%s", color(colorCyan), colorReset)
+		}
 	}
 
 	if id, ok := tool["id"].(string); ok {
@@ -430,155 +432,106 @@ func displayToolUse(tool map[string]interface{}, indent string) {
 
 	fmt.Println()
 
-	// Always display key parameters for certain tools
-	if input, ok := tool["input"].(map[string]interface{}); ok {
-		// Display key parameters inline for Edit-like tools
-		switch toolName {
-		case "Edit", "MultiEdit", "Write", "Read":
-			displayToolInputKeyParams(input, toolName, indent+"  ")
-		case "Bash":
-			// Always show Bash command and description
-			displayBashInput(input, indent+"  ")
-		case "Task":
-			// Always show Task prompt and description
-			displayTaskInput(input, indent+"  ")
-		default:
-			// Check if this is an MCP tool (starts with mcp__)
-			if strings.HasPrefix(toolName, "mcp__") {
-				displayMCPToolInput(input, toolName, indent+"  ")
-			} else if cfg.Verbose || cfg.Compact {
-				// Display full input in verbose or compact mode for other tools
-				displayToolInput(input, toolName, indent+"  ")
-			}
-		}
+	// Display input as key: value format for all tools
+	if input, ok := tool["input"].(map[string]interface{}); ok && len(input) > 0 {
+		displayToolInputAsKeyValue(input, indent+"  ")
 	}
 }
 
-// Display key parameters for tool input
-func displayToolInputKeyParams(input map[string]interface{}, toolName, indent string) {
-	switch toolName {
-	case "Edit", "MultiEdit", "Write", "Read":
-		if filePath, ok := input["file_path"].(string); ok {
-			fmt.Printf("%s%sfile_path:%s %s\n", indent, color(colorGray), colorReset, filePath)
-		}
-	}
-}
-
-// Display Bash tool input with command and description
-func displayBashInput(input map[string]interface{}, indent string) {
-	if cmd, ok := input["command"].(string); ok {
-		fmt.Printf("%s%scommand:%s %s\n", indent, color(colorGray), colorReset, cmd)
-	}
-	if desc, ok := input["description"].(string); ok {
-		fmt.Printf("%s%sdescription:%s %s\n", indent, color(colorGray), colorReset, desc)
-	}
-}
-
-// Display Task tool input with prompt and description
-func displayTaskInput(input map[string]interface{}, indent string) {
-	if prompt, ok := input["prompt"].(string); ok {
-		fmt.Printf("%s%sprompt:%s %s\n", indent, color(colorGray), colorReset, prompt)
-	}
-	if desc, ok := input["description"].(string); ok {
-		fmt.Printf("%s%sdescription:%s %s\n", indent, color(colorGray), colorReset, desc)
-	}
-}
-
-// Display MCP tool input in key: value format with truncation for long values
-func displayMCPToolInput(input map[string]interface{}, toolName, indent string) {
+// Display tool input as key: value format with appropriate formatting
+func displayToolInputAsKeyValue(input map[string]interface{}, indent string) {
 	for key, value := range input {
 		fmt.Printf("%s%s%s:%s ", indent, color(colorGray), key, colorReset)
-
-		switch v := value.(type) {
-		case string:
-			// Truncate very long strings
-			switch {
-			case len(v) > 100:
-				truncated := truncateRunes(v, 80)
-				fmt.Printf("%s\n", truncated)
-			case strings.Contains(v, "\n"):
-				// For multi-line strings, show first line only
-				lines := strings.Split(v, "\n")
-				firstLine := strings.TrimSpace(lines[0])
-				if len(lines) > 1 {
-					fmt.Printf("%s... (%d more lines)\n", truncateRunes(firstLine, 60), len(lines)-1)
-				} else {
-					fmt.Printf("%s\n", firstLine)
-				}
-			default:
-				fmt.Printf("%s\n", v)
-			}
-		case []interface{}:
-			// For arrays, show count and type
-			fmt.Printf("[%d items]\n", len(v))
-		case map[string]interface{}:
-			// For objects, show key count
-			fmt.Printf("{%d keys}\n", len(v))
-		case bool:
-			fmt.Printf("%v\n", v)
-		case float64, int:
-			fmt.Printf("%v\n", v)
-		default:
-			// For other types, convert to JSON but truncate if needed
-			if data, err := json.Marshal(value); err == nil {
-				jsonStr := string(data)
-				if len(jsonStr) > 100 {
-					fmt.Printf("%s\n", truncateRunes(jsonStr, 80))
-				} else {
-					fmt.Printf("%s\n", jsonStr)
-				}
-			} else {
-				fmt.Printf("%v\n", v)
-			}
-		}
+		displayToolInputValue(key, value)
 	}
 }
 
-// Display tool input based on tool type
-func displayToolInput(input map[string]interface{}, toolName, indent string) {
-	// Special handling for common tools
-	switch toolName {
-	case "Bash":
-		displayBashInput(input, indent)
-	case "Task":
-		displayTaskInput(input, indent)
-	case "Read", "Write":
-		if path, ok := input["file_path"].(string); ok {
-			fmt.Printf("%sFile: %s\n", indent, path)
-		}
-		if content, ok := input["content"].(string); ok {
-			displayText(content, indent)
-		}
-	case "Edit", "MultiEdit":
-		if path, ok := input["file_path"].(string); ok {
-			fmt.Printf("%sFile: %s\n", indent, path)
-		}
-		// For MultiEdit, show edit count
-		if edits, ok := input["edits"].([]interface{}); ok {
-			fmt.Printf("%sEdits: %d changes\n", indent, len(edits))
+// Display individual tool input value based on type
+func displayToolInputValue(key string, value interface{}) {
+	switch v := value.(type) {
+	case string:
+		displayToolInputString(key, v)
+	case []interface{}:
+		displayToolInputArray(v)
+	case map[string]interface{}:
+		displayToolInputObject(v)
+	case bool, float64, int:
+		fmt.Printf("%v\n", v)
+	case nil:
+		fmt.Printf("null\n")
+	default:
+		displayToolInputDefault(value)
+	}
+}
+
+// Display string value with appropriate truncation
+func displayToolInputString(key, value string) {
+	// Always show full path for file-related keys
+	isPathKey := key == "file_path" || key == "path" || strings.HasSuffix(key, "_path")
+
+	switch {
+	case isPathKey || cfg.Verbose:
+		// Show full content for paths or in verbose mode
+		fmt.Printf("%s\n", value)
+	case len(value) > 100:
+		// Truncate very long strings
+		fmt.Printf("%s\n", truncateRunes(value, 80))
+	case strings.Contains(value, "\n"):
+		// For multi-line strings, show first line only
+		lines := strings.Split(value, "\n")
+		firstLine := strings.TrimSpace(lines[0])
+		if len(lines) > 1 {
+			fmt.Printf("%s... (%d more lines)\n", truncateRunes(firstLine, 60), len(lines)-1)
+		} else {
+			fmt.Printf("%s\n", firstLine)
 		}
 	default:
-		// Generic display for other tools
-		for key, value := range input {
-			fmt.Printf("%s%s: ", indent, key)
-			switch v := value.(type) {
-			case string:
-				// For multi-line strings, indent properly
-				if strings.Contains(v, "\n") {
-					fmt.Println()
-					displayText(v, indent+"  ")
-				} else {
-					fmt.Printf("%s\n", v)
-				}
-			default:
-				// For complex types, use JSON
-				if data, err := json.MarshalIndent(value, "", "  "); err == nil {
-					fmt.Printf("%s\n", string(data))
-				} else {
-					fmt.Printf("%v\n", value)
-				}
-			}
+		fmt.Printf("%s\n", value)
+	}
+}
+
+// Display array values
+func displayToolInputArray(v []interface{}) {
+	if cfg.Verbose {
+		// In verbose mode, show full JSON
+		if data, err := json.MarshalIndent(v, "", "  "); err == nil {
+			fmt.Printf("%s\n", string(data))
+		} else {
+			fmt.Printf("[%d items]\n", len(v))
 		}
+	} else {
+		// For arrays, show count and type
+		fmt.Printf("[%d items]\n", len(v))
+	}
+}
+
+// Display object values
+func displayToolInputObject(v map[string]interface{}) {
+	if cfg.Verbose {
+		// In verbose mode, show full JSON
+		if data, err := json.MarshalIndent(v, "", "  "); err == nil {
+			fmt.Printf("%s\n", string(data))
+		} else {
+			fmt.Printf("{%d keys}\n", len(v))
+		}
+	} else {
+		// For objects, show key count
+		fmt.Printf("{%d keys}\n", len(v))
+	}
+}
+
+// Display default/unknown type values
+func displayToolInputDefault(value interface{}) {
+	// For other types, convert to JSON
+	if data, err := json.Marshal(value); err == nil {
+		jsonStr := string(data)
+		if cfg.Verbose || len(jsonStr) <= 100 {
+			fmt.Printf("%s\n", jsonStr)
+		} else {
+			fmt.Printf("%s\n", truncateRunes(jsonStr, 80))
+		}
+	} else {
+		fmt.Printf("%v\n", value)
 	}
 }
 
