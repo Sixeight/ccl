@@ -47,11 +47,12 @@ func formatTimestamp(timestamp string) string {
 
 		// Format elapsed time
 		var elapsedStr string
-		if elapsed < time.Second {
+		switch {
+		case elapsed < time.Second:
 			elapsedStr = fmt.Sprintf("+%dms", elapsed.Milliseconds())
-		} else if elapsed < time.Minute {
+		case elapsed < time.Minute:
 			elapsedStr = fmt.Sprintf("+%.1fs", elapsed.Seconds())
-		} else {
+		default:
 			elapsedStr = fmt.Sprintf("+%dm%ds", int(elapsed.Minutes()), int(elapsed.Seconds())%60)
 		}
 		return fmt.Sprintf("%s %s", localTime.Format("15:04:05"), elapsedStr)
@@ -202,7 +203,7 @@ func formatVersionInfo(version string) string {
 }
 
 // Display user message
-func displayUserMessage(entry map[string]interface{}, timeStr string, versionStr string, toolUseMap map[string]string, toolInputMap map[string]map[string]interface{}) {
+func displayUserMessage(entry map[string]interface{}, timeStr, versionStr string, toolUseMap map[string]string, toolInputMap map[string]map[string]interface{}) {
 	message, ok := entry["message"].(map[string]interface{})
 	if !ok {
 		return
@@ -246,7 +247,7 @@ func displayUserMessage(entry map[string]interface{}, timeStr string, versionStr
 }
 
 // Display assistant message
-func displayAssistantMessage(entry map[string]interface{}, timeStr string, versionStr string) {
+func displayAssistantMessage(entry map[string]interface{}, timeStr, versionStr string) {
 	message, ok := entry["message"].(map[string]interface{})
 	if !ok {
 		return
@@ -310,7 +311,7 @@ func displayAssistantMessage(entry map[string]interface{}, timeStr string, versi
 }
 
 // Display tool result from user message
-func displayToolResult(message map[string]interface{}, timeStr string, versionStr string, toolUseMap map[string]string, toolInputMap map[string]map[string]interface{}, toolUseResult map[string]interface{}) {
+func displayToolResult(message map[string]interface{}, timeStr, versionStr string, toolUseMap map[string]string, toolInputMap map[string]map[string]interface{}, toolUseResult map[string]interface{}) {
 	// Display header
 	fmt.Printf("%s[%s]%s %sTOOL%s",
 		color(colorGray), timeStr, versionStr,
@@ -372,7 +373,7 @@ func displayMessageContent(message map[string]interface{}, indent string) {
 }
 
 // Display message content with full context
-func displayMessageContentFull(message map[string]interface{}, indent string, toolName string, toolUseResult map[string]interface{}, toolInput map[string]interface{}) {
+func displayMessageContentFull(message map[string]interface{}, indent, toolName string, toolUseResult, toolInput map[string]interface{}) {
 	content := extractContent(message)
 
 	for _, item := range content {
@@ -390,7 +391,7 @@ func displayMessageContentFull(message map[string]interface{}, indent string, to
 }
 
 // Display text content
-func displayText(text string, indent string) {
+func displayText(text, indent string) {
 	lines := strings.Split(text, "\n")
 	for _, line := range lines {
 		fmt.Printf("%s%s\n", indent, line)
@@ -398,7 +399,7 @@ func displayText(text string, indent string) {
 }
 
 // Display text content with line limit
-func displayTextTruncated(text string, indent string, maxLines int) {
+func displayTextTruncated(text, indent string, maxLines int) {
 	lines := strings.Split(text, "\n")
 	totalLines := len(lines)
 
@@ -476,7 +477,7 @@ func displayToolUse(tool map[string]interface{}, indent string) {
 }
 
 // Display key parameters for tool input
-func displayToolInputKeyParams(input map[string]interface{}, toolName string, indent string) {
+func displayToolInputKeyParams(input map[string]interface{}, toolName, indent string) {
 	switch toolName {
 	case "Edit", "MultiEdit", "Write", "Read":
 		if filePath, ok := input["file_path"].(string); ok {
@@ -506,17 +507,18 @@ func displayTaskInput(input map[string]interface{}, indent string) {
 }
 
 // Display MCP tool input in key: value format with truncation for long values
-func displayMCPToolInput(input map[string]interface{}, toolName string, indent string) {
+func displayMCPToolInput(input map[string]interface{}, toolName, indent string) {
 	for key, value := range input {
 		fmt.Printf("%s%s%s:%s ", indent, color(colorGray), key, colorReset)
 
 		switch v := value.(type) {
 		case string:
 			// Truncate very long strings
-			if len(v) > 100 {
+			switch {
+			case len(v) > 100:
 				truncated := truncateRunes(v, 80)
 				fmt.Printf("%s\n", truncated)
-			} else if strings.Contains(v, "\n") {
+			case strings.Contains(v, "\n"):
 				// For multi-line strings, show first line only
 				lines := strings.Split(v, "\n")
 				firstLine := strings.TrimSpace(lines[0])
@@ -525,7 +527,7 @@ func displayMCPToolInput(input map[string]interface{}, toolName string, indent s
 				} else {
 					fmt.Printf("%s\n", firstLine)
 				}
-			} else {
+			default:
 				fmt.Printf("%s\n", v)
 			}
 		case []interface{}:
@@ -555,7 +557,7 @@ func displayMCPToolInput(input map[string]interface{}, toolName string, indent s
 }
 
 // Display tool input based on tool type
-func displayToolInput(input map[string]interface{}, toolName string, indent string) {
+func displayToolInput(input map[string]interface{}, toolName, indent string) {
 	// Special handling for common tools
 	switch toolName {
 	case "Bash":
@@ -602,8 +604,43 @@ func displayToolInput(input map[string]interface{}, toolName string, indent stri
 	}
 }
 
+// Display tool result string content
+func displayToolResultString(content, indent string) bool {
+	if content == "" {
+		return false
+	}
+	if cfg.Verbose {
+		// In verbose mode, show all content
+		displayText(content, indent)
+	} else {
+		// In normal mode, show first 10 lines with truncation notice
+		displayTextTruncated(content, indent, 10)
+	}
+	return true
+}
+
+// Display tool result array content
+func displayToolResultArray(content []interface{}, indent string) bool {
+	hasContent := false
+	for _, item := range content {
+		if m, ok := item.(map[string]interface{}); ok {
+			if m["type"] == "text" {
+				if text, ok := m["text"].(string); ok && text != "" {
+					hasContent = true
+					if cfg.Verbose {
+						displayText(text, indent)
+					} else {
+						displayTextTruncated(text, indent, 10)
+					}
+				}
+			}
+		}
+	}
+	return hasContent
+}
+
 // Display tool result content with full context
-func displayToolResultFull(result map[string]interface{}, indent string, toolName string, toolUseResult map[string]interface{}, toolInput map[string]interface{}) {
+func displayToolResultFull(result map[string]interface{}, indent, toolName string, toolUseResult, toolInput map[string]interface{}) {
 	// Check if it's an error
 	if isError, ok := result["is_error"].(bool); ok && isError {
 		fmt.Printf("%s%s[ERROR]%s\n", indent, color(colorRed), colorReset)
@@ -617,38 +654,82 @@ func displayToolResultFull(result map[string]interface{}, indent string, toolNam
 
 	// Display content - tool_result content is a string, not an array
 	hasContent := false
-	if content, ok := result["content"].(string); ok {
-		if content != "" {
-			hasContent = true
-			if cfg.Verbose {
-				// In verbose mode, show all content
-				displayText(content, indent)
-			} else {
-				// In normal mode, show first 10 lines with truncation notice
-				displayTextTruncated(content, indent, 10)
-			}
-		}
-	} else if content, ok := result["content"].([]interface{}); ok {
-		// Fallback for array format (if any)
-		for _, item := range content {
-			if m, ok := item.(map[string]interface{}); ok {
-				if m["type"] == "text" {
-					if text, ok := m["text"].(string); ok && text != "" {
-						hasContent = true
-						if cfg.Verbose {
-							displayText(text, indent)
-						} else {
-							displayTextTruncated(text, indent, 10)
-						}
-					}
-				}
-			}
-		}
+	switch content := result["content"].(type) {
+	case string:
+		hasContent = displayToolResultString(content, indent)
+	case []interface{}:
+		hasContent = displayToolResultArray(content, indent)
 	}
 
 	// Show "(No content)" if no content was displayed
 	if !hasContent {
 		fmt.Printf("%s%s(No content)%s\n", indent, color(colorGray), colorReset)
+	}
+}
+
+// Get status icon and color
+func getTodoStatusIcon(status string) (icon, color string) {
+	switch status {
+	case "completed":
+		return "✓", colorGreen
+	case "in_progress":
+		return "→", colorYellow
+	case "pending":
+		return "□", colorGray
+	default:
+		return "•", colorGray
+	}
+}
+
+// Display a single todo item
+func displayTodoItem(todo map[string]interface{}, indent string) {
+	content, _ := todo["content"].(string)
+	status, _ := todo["status"].(string)
+	priority, _ := todo["priority"].(string)
+
+	statusIcon, statusColor := getTodoStatusIcon(status)
+
+	// Display the todo item
+	fmt.Printf("%s%s%s%s %s", indent, color(statusColor), statusIcon, colorReset, content)
+
+	// Add priority indicator
+	switch priority {
+	case "high":
+		fmt.Printf(" %s[HIGH]%s", color(colorRed), colorReset)
+	case "medium":
+		fmt.Printf(" %s[MED]%s", color(colorYellow), colorReset)
+	}
+
+	fmt.Println()
+}
+
+// Display todo changes
+func displayTodoChanges(newTodos, oldTodos []interface{}, indent string) {
+	// Build old status map
+	oldMap := make(map[string]string)
+	for _, oldItem := range oldTodos {
+		if old, ok := oldItem.(map[string]interface{}); ok {
+			if id, ok := old["id"].(string); ok {
+				if status, ok := old["status"].(string); ok {
+					oldMap[id] = status
+				}
+			}
+		}
+	}
+
+	// Show status changes
+	fmt.Printf("%s%sChanges:%s\n", indent, color(colorGray), colorReset)
+	for _, newItem := range newTodos {
+		if newTodo, ok := newItem.(map[string]interface{}); ok {
+			if id, ok := newTodo["id"].(string); ok {
+				if newStatus, ok := newTodo["status"].(string); ok {
+					if oldStatus, exists := oldMap[id]; exists && oldStatus != newStatus {
+						content, _ := newTodo["content"].(string)
+						fmt.Printf("%s  %s: %s → %s\n", indent, content, oldStatus, newStatus)
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -659,71 +740,14 @@ func displayTodoWriteResultWithData(result map[string]interface{}, indent string
 		// Display each todo item
 		for _, todoItem := range newTodos {
 			if todo, ok := todoItem.(map[string]interface{}); ok {
-				content, _ := todo["content"].(string)
-				status, _ := todo["status"].(string)
-				priority, _ := todo["priority"].(string)
-
-				// Format based on status
-				var statusIcon string
-				var statusColor string
-				switch status {
-				case "completed":
-					statusIcon = "✓"
-					statusColor = colorGreen
-				case "in_progress":
-					statusIcon = "→"
-					statusColor = colorYellow
-				case "pending":
-					statusIcon = "□"
-					statusColor = colorGray
-				default:
-					statusIcon = "•"
-					statusColor = colorGray
-				}
-
-				// Display the todo item
-				fmt.Printf("%s%s%s%s %s", indent, color(statusColor), statusIcon, colorReset, content)
-
-				// Add priority indicator if high
-				if priority == "high" {
-					fmt.Printf(" %s[HIGH]%s", color(colorRed), colorReset)
-				} else if priority == "medium" {
-					fmt.Printf(" %s[MED]%s", color(colorYellow), colorReset)
-				}
-
-				fmt.Println()
+				displayTodoItem(todo, indent)
 			}
 		}
 
 		// Show changes in verbose mode
 		if cfg.Verbose {
 			if oldTodos, ok := toolUseResult["oldTodos"].([]interface{}); ok {
-				// Compare old and new to show what changed
-				oldMap := make(map[string]string)
-				for _, oldItem := range oldTodos {
-					if old, ok := oldItem.(map[string]interface{}); ok {
-						if id, ok := old["id"].(string); ok {
-							if status, ok := old["status"].(string); ok {
-								oldMap[id] = status
-							}
-						}
-					}
-				}
-
-				// Show status changes
-				fmt.Printf("%s%sChanges:%s\n", indent, color(colorGray), colorReset)
-				for _, newItem := range newTodos {
-					if new, ok := newItem.(map[string]interface{}); ok {
-						if id, ok := new["id"].(string); ok {
-							if newStatus, ok := new["status"].(string); ok {
-								if oldStatus, exists := oldMap[id]; exists && oldStatus != newStatus {
-									content, _ := new["content"].(string)
-									fmt.Printf("%s  %s: %s → %s\n", indent, content, oldStatus, newStatus)
-								}
-							}
-						}
-					}
-				}
+				displayTodoChanges(newTodos, oldTodos, indent)
 			}
 		}
 	} else {

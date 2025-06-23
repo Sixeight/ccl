@@ -16,19 +16,19 @@ const version = "0.3.0"
 
 // Config holds all configuration options
 type Config struct {
+	Role         string
+	OutputFormat string
+	ToolExclude  string
 	ProjectPath  string
-	ShowVersion  bool
-	NoColor      bool
+	ToolFilter   string
 	Compact      bool
 	Verbose      bool
-	Role         string
-	ToolFilter   string
-	ToolExclude  string
+	NoColor      bool
 	ShowCost     bool
 	ShowTiming   bool
-	OutputFormat string
-	ShowAllTools bool // Show all tools when --tools flag is used
-	Follow       bool // Follow mode like tail -f
+	ShowVersion  bool
+	ShowAllTools bool
+	Follow       bool
 }
 
 var cfg Config
@@ -116,7 +116,7 @@ func main() {
 
 	if cfg.ShowVersion {
 		fmt.Printf("ccl version %s\n", version)
-		os.Exit(0)
+		return
 	}
 
 	// Fetch pricing data if cost flag is set
@@ -130,18 +130,17 @@ func main() {
 
 	// Get input reader
 	reader, cleanup, err := getInputReader()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
 	if cleanup != nil {
 		defer cleanup()
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return
 	}
 
 	// Process and display conversation
 	if err := processConversation(reader); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
 	}
 }
 
@@ -234,33 +233,34 @@ func findProjectFile() string {
 
 	// Find matching directory
 	for _, entry := range entries {
-		if entry.IsDir() && entry.Name() == encoded {
-			// Look for JSONL files in this directory
-			projectDir := filepath.Join(projectsDir, entry.Name())
-			files, err := os.ReadDir(projectDir)
-			if err != nil {
-				continue
-			}
+		if !entry.IsDir() || entry.Name() != encoded {
+			continue
+		}
+		// Look for JSONL files in this directory
+		projectDir := filepath.Join(projectsDir, entry.Name())
+		files, err := os.ReadDir(projectDir)
+		if err != nil {
+			continue
+		}
 
-			// Find the most recent JSONL file
-			var newestFile string
-			var newestTime int64
-			for _, file := range files {
-				if !file.IsDir() && strings.HasSuffix(file.Name(), ".jsonl") {
-					info, err := file.Info()
-					if err != nil {
-						continue
-					}
-					if info.ModTime().Unix() > newestTime {
-						newestTime = info.ModTime().Unix()
-						newestFile = filepath.Join(projectDir, file.Name())
-					}
+		// Find the most recent JSONL file
+		var newestFile string
+		var newestTime int64
+		for _, file := range files {
+			if !file.IsDir() && strings.HasSuffix(file.Name(), ".jsonl") {
+				info, err := file.Info()
+				if err != nil {
+					continue
+				}
+				if info.ModTime().Unix() > newestTime {
+					newestTime = info.ModTime().Unix()
+					newestFile = filepath.Join(projectDir, file.Name())
 				}
 			}
+		}
 
-			if newestFile != "" {
-				return newestFile
-			}
+		if newestFile != "" {
+			return newestFile
 		}
 	}
 
@@ -283,9 +283,8 @@ func processConversation(reader io.Reader) error {
 		// Follow mode only works with files, not stdin
 		if file, ok := reader.(*os.File); ok && file != os.Stdin {
 			return processFollowMode(file)
-		} else {
-			return fmt.Errorf("follow mode (-f) only works with file input, not stdin")
 		}
+		return fmt.Errorf("follow mode (-f) only works with file input, not stdin")
 	}
 
 	// Check if stdin is a terminal (for streaming mode detection)
@@ -295,10 +294,9 @@ func processConversation(reader io.Reader) error {
 	if isStreaming {
 		// Streaming mode: process line by line without buffering
 		return processStreaming(reader)
-	} else {
-		// Regular mode: two-pass processing for tool name mapping
-		return processBuffered(reader)
 	}
+	// Regular mode: two-pass processing for tool name mapping
+	return processBuffered(reader)
 }
 
 // Process follow mode - continuously monitor file for new entries
@@ -332,8 +330,8 @@ func processFollowMode(file *os.File) error {
 	}
 
 	// Display all existing content
-	if err := processBuffered(file); err != nil {
-		return err
+	if fileErr := processBuffered(file); fileErr != nil {
+		return fileErr
 	}
 
 	// Get current position (end of file)

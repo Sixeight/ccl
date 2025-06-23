@@ -127,6 +127,42 @@ func shouldDisplayToolResult(entry map[string]interface{}, toolUseMap map[string
 	return false
 }
 
+// Get tool name from content item
+func getToolName(m map[string]interface{}, toolUseMap map[string]string) string {
+	if id, ok := m["id"].(string); ok {
+		if toolName := toolUseMap[id]; toolName != "" {
+			return toolName
+		}
+	}
+	if name, ok := m["name"].(string); ok {
+		return name
+	}
+	return ""
+}
+
+// Check if tool is excluded
+func isToolExcluded(toolName string, excludeList []string) bool {
+	for _, pattern := range excludeList {
+		if matchGlobPattern(pattern, toolName) {
+			return true
+		}
+	}
+	return false
+}
+
+// Check if tool matches filter
+func isToolFiltered(toolName string, filterList []string) bool {
+	if len(filterList) == 0 {
+		return true // No filters means include all
+	}
+	for _, pattern := range filterList {
+		if matchGlobPattern(pattern, toolName) {
+			return true
+		}
+	}
+	return false
+}
+
 // Check if an assistant message with tools should be displayed
 func shouldDisplayAssistantWithTools(entry map[string]interface{}, toolUseMap map[string]string) bool {
 	toolFilterList := parseCommaSeparated(cfg.ToolFilter)
@@ -155,51 +191,22 @@ func shouldDisplayAssistantWithTools(entry map[string]interface{}, toolUseMap ma
 			continue
 		}
 
-		// Get tool name
-		var toolName string
-		if id, ok := m["id"].(string); ok {
-			toolName = toolUseMap[id]
-		}
-		if toolName == "" {
-			if name, ok := m["name"].(string); ok {
-				toolName = name
-			}
-		}
+		toolName := getToolName(m, toolUseMap)
 
 		// Check excludes
-		excluded := false
-		for _, pattern := range toolExcludeList {
-			if matchGlobPattern(pattern, toolName) {
-				excluded = true
-				break
-			}
-		}
-		if excluded {
+		if isToolExcluded(toolName, toolExcludeList) {
 			continue
 		}
 
-		// If we have filters, check if tool matches
-		if len(toolFilterList) > 0 {
-			for _, pattern := range toolFilterList {
-				match := matchGlobPattern(pattern, toolName)
-				if match {
-					hasFilteredTool = true
-					break
-				}
-			}
-		} else {
-			// No filters, but not excluded
+		// Check if tool matches filter
+		if isToolFiltered(toolName, toolFilterList) {
 			hasFilteredTool = true
+			break
 		}
 	}
 
-	// If tool filters are specified, only show if we found a matching tool
-	if len(toolFilterList) > 0 {
-		return hasFilteredTool
-	}
-
-	// Otherwise show the message
-	return true
+	// Show message only if it has filtered tools
+	return hasFilteredTool
 }
 
 // Check if a user message with tool results should be displayed
