@@ -32,7 +32,7 @@ tail -f project.jsonl | ccl
 
 ```bash
 # Show only user messages
-ccl --filter user
+ccl --role user
 
 # Show Bash commands and their results
 ccl --tool Bash
@@ -44,7 +44,7 @@ ccl --tool "*Edit"
 ccl --tool-exclude "Todo*"
 
 # Combine filters
-ccl --filter assistant --tool "mcp__*"  # MCP tools used by assistant
+ccl --role assistant --tool "mcp__*"  # MCP tools used by assistant
 ```
 
 ### Output Options
@@ -53,7 +53,8 @@ ccl --filter assistant --tool "mcp__*"  # MCP tools used by assistant
 ccl --compact    # Minimal output, no tool details
 ccl --no-color   # Plain text without colors
 ccl --json       # Original JSON format for piping
-ccl --pricing    # Include token costs
+ccl --cost       # Include token costs
+ccl -f           # Follow mode (like tail -f)
 ```
 
 ### Advanced Queries
