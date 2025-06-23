@@ -64,6 +64,7 @@ func init() {
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  # Display conversation from current project\n")
+		fmt.Fprintf(os.Stderr, "  # (searches in CLAUDE_CONFIG_DIR, XDG_CONFIG_HOME/claude, or ~/.claude)\n")
 		fmt.Fprintf(os.Stderr, "  ccl\n\n")
 		fmt.Fprintf(os.Stderr, "  # Display specific project file\n")
 		fmt.Fprintf(os.Stderr, "  ccl project.jsonl\n\n")
@@ -174,7 +175,8 @@ func getInputReader() (io.Reader, func(), error) {
 	// Try to find project file for current directory
 	projectFile := findProjectFile()
 	if projectFile == "" {
-		return nil, nil, fmt.Errorf("no input provided and no project file found for current directory")
+		configDir := getClaudeConfigDir()
+		return nil, nil, fmt.Errorf("no input provided and no project file found for current directory in %s/projects/", configDir)
 	}
 
 	file, err := os.Open(projectFile)
@@ -182,6 +184,30 @@ func getInputReader() (io.Reader, func(), error) {
 		return nil, nil, fmt.Errorf("opening project file: %w", err)
 	}
 	return file, func() { file.Close() }, nil
+}
+
+// getClaudeConfigDir returns the Claude configuration directory
+// following the same logic as Claude Code:
+// 1. CLAUDE_CONFIG_DIR environment variable
+// 2. XDG_CONFIG_HOME/claude
+// 3. ~/.claude (default)
+func getClaudeConfigDir() string {
+	// Check CLAUDE_CONFIG_DIR first
+	if configDir := os.Getenv("CLAUDE_CONFIG_DIR"); configDir != "" {
+		return configDir
+	}
+
+	// Check XDG_CONFIG_HOME
+	if xdgConfig := os.Getenv("XDG_CONFIG_HOME"); xdgConfig != "" {
+		return filepath.Join(xdgConfig, "claude")
+	}
+
+	// Default to ~/.claude
+	home := os.Getenv("HOME")
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".claude")
 }
 
 // Find project file in Claude Code config
@@ -194,9 +220,14 @@ func findProjectFile() string {
 	// Encode the current directory path for matching
 	encoded := encodeDirectoryPath(cwd)
 
-	// Look in Claude Code config directory
-	configDir := filepath.Join(os.Getenv("HOME"), ".config", "claude", "projects")
-	entries, err := os.ReadDir(configDir)
+	// Determine Claude config directory using the same logic as Claude Code
+	configDir := getClaudeConfigDir()
+	if configDir == "" {
+		return ""
+	}
+
+	projectsDir := filepath.Join(configDir, "projects")
+	entries, err := os.ReadDir(projectsDir)
 	if err != nil {
 		return ""
 	}
@@ -205,7 +236,7 @@ func findProjectFile() string {
 	for _, entry := range entries {
 		if entry.IsDir() && entry.Name() == encoded {
 			// Look for JSONL files in this directory
-			projectDir := filepath.Join(configDir, entry.Name())
+			projectDir := filepath.Join(projectsDir, entry.Name())
 			files, err := os.ReadDir(projectDir)
 			if err != nil {
 				continue

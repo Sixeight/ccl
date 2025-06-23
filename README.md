@@ -1,219 +1,117 @@
 # ccl - Claude Code Log
 
-A CLI tool that converts Claude Code project files from JSONL format to human-readable format. It automatically detects project files from `~/.config/claude/projects/` and provides filtering, streaming, and formatting capabilities.
+View Claude Code project files in a human-readable format with powerful filtering and search capabilities.
 
-## Features
-
-- 🚀 **Auto-detection**: Automatically detects project files from `~/.config/claude/projects/` for the current directory
-- 🎨 **Color-coded display**: Easy-to-read color coding by role (USER/ASSISTANT/TOOL)
-- 🔍 **Flexible filtering**: Advanced filtering by role, tool name, and glob patterns
-- 📊 **Real-time support**: Process streaming input (`tail -f`) in real-time
-- 💰 **Cost calculation**: Calculate token count and costs (optional)
-- 🔧 **MCP tool support**: Readable formatting for MCP (Model Context Protocol) tool inputs
-- ⚡ **Fast**: Uses only Go standard library, no external dependencies
-
-## Installation
+## Quick Start
 
 ```bash
+# Install
 go install github.com/Sixeight/ccl@latest
-```
 
-Or clone and build from source:
-
-```bash
-git clone https://github.com/Sixeight/ccl.git
-cd ccl
-make build
-```
-
-## Usage
-
-### Basic Usage
-
-```bash
-# Auto-detect and display project file for current directory
+# View current project's conversation
 ccl
 
-# Specify a file
-ccl path/to/project.jsonl
+# View specific file
+ccl project.jsonl
 
-# Pipe input
-cat project.jsonl | ccl
-
-# Streaming input (real-time display)
+# Stream real-time updates
 tail -f project.jsonl | ccl
 ```
 
-### Display Options
+## Key Features
+
+- **Auto-detection** - Finds project files for your current directory automatically
+- **Smart filtering** - Filter by role (user/assistant/tool) or specific tools with glob patterns
+- **Real-time streaming** - Watch conversations as they happen
+- **Multiple formats** - Text (colored), JSON, or compact output
+- **Cost tracking** - Optional token usage and pricing information
+
+## Common Usage
+
+### Filtering Examples
 
 ```bash
-# Compact mode (omit tool details)
-ccl --compact
+# Show only user messages
+ccl --filter user
 
-# No color output
-ccl --no-color
+# Show Bash commands and their results
+ccl --tool Bash
 
-# JSON output (preserves original format)
-ccl --json
+# Show all Edit operations (Edit, MultiEdit)
+ccl --tool "*Edit"
 
-# Show token count and costs
-ccl --pricing
+# Exclude todo-related messages
+ccl --tool-exclude "Todo*"
+
+# Combine filters
+ccl --filter assistant --tool "mcp__*"  # MCP tools used by assistant
 ```
 
-### Filtering
-
-#### Filter by Role
+### Output Options
 
 ```bash
-# Show specific roles only
-ccl --filter user           # USER messages only
-ccl --filter tool           # TOOL messages only
-ccl --filter user,assistant # USER and ASSISTANT
-
-# Exclude specific roles
-ccl --exclude tool          # Show everything except TOOL
-ccl --exclude user,tool     # Show everything except USER and TOOL (ASSISTANT only)
+ccl --compact    # Minimal output, no tool details
+ccl --no-color   # Plain text without colors
+ccl --json       # Original JSON format for piping
+ccl --pricing    # Include token costs
 ```
 
-#### Filter by Tool
+### Advanced Queries
 
 ```bash
-# Show specific tools only
-ccl --tool Bash             # Bash tool usage only
-ccl --tool Bash,Edit        # Bash or Edit tools
-ccl --filter tool --tool Bash  # Bash tool results only
-
-# Filter tools with glob patterns
-ccl --tool "*Edit"          # All Edit-related tools (Edit, MultiEdit)
-ccl --tool "Todo*"          # All Todo-related tools (TodoRead, TodoWrite)
-ccl --tool "mcp__*"         # All MCP tools
-
-# Exclude specific tools
-ccl --tool-exclude TodoWrite    # Everything except TodoWrite
-ccl --tool-exclude Bash,Edit    # Everything except Bash and Edit
-ccl --tool-exclude "*Edit"      # Exclude Edit-related tools
-```
-
-### Advanced Usage
-
-```bash
-# Extract specific messages with jq
-cat project.jsonl | jq 'select(.type=="user")' | ccl
-
-# Display logs for a specific date range
-ccl --json | jq 'select(.timestamp >= "2024-01-01" and .timestamp <= "2024-01-31")'
-
-# Show only Bash commands containing errors
+# Find errors in Bash commands
 ccl --tool Bash --json | jq 'select(.content.output | contains("error"))'
+
+# Extract specific date range
+ccl --json | jq 'select(.timestamp >= "2024-01-01")'
+
+# Count messages by type
+ccl --json | jq -s 'group_by(.type) | map({type: .[0].type, count: length})'
 ```
 
-## Display Examples
+## Example Output
 
 ```
 [06:01:35] USER
-  I want to read Claude Code project files and display them in a formatted way with search queries.
+  Help me create a CLI tool to view Claude Code logs.
 
 [06:01:40] ASSISTANT (claude-opus-4-20250514)
-  I'll create a plan for a jq-like tool "ccq" for Claude Code project files.
+  I'll help you create that tool. Let me start by examining the project structure.
 
 [06:01:47] ASSISTANT (claude-opus-4-20250514)
-  → Tool: TodoWrite
+  → Tool: Bash
   Input:
-    Todos: 7 items
-      - Research project structure and understand Claude Code project file format [pending]
-      - Design and implement basic CLI tool structure (argument parsing, help display) [pending]
-      - Implement JSON file reading and formatted display functionality [pending]
-      ... and 4 more
-
+    command: ls -la
+  
 [06:01:48] TOOL (result for: toolu_01)
   ← Tool Result (toolu_01) [success]
-    Todos have been modified successfully.
+    total 16
+    drwxr-xr-x  4 user  staff   128 Jan 15 10:00 .
+    drwxr-xr-x  5 user  staff   160 Jan 15 09:00 ..
+    -rw-r--r--  1 user  staff  1024 Jan 15 10:00 main.go
+    -rw-r--r--  1 user  staff   512 Jan 15 10:00 go.mod
 ```
 
-### MCP Tool Display Example
+## Configuration
 
-MCP tools (starting with `mcp__`) get special formatting:
+ccl looks for project files in the Claude configuration directory:
 
-```
-[10:23:45] ASSISTANT (claude-opus-4-20250514)
-  → Tool: mcp__github__create_issue
-  Input:
-    owner: Sixeight
-    repo: ccl
-    title: Add support for JSON output format
-    body: We should add a --json flag to output the processed data in JSON format...
-    labels: [2 items]
-      - enhancement
-      - feature-request
-```
+1. `$CLAUDE_CONFIG_DIR` (if set)
+2. `$XDG_CONFIG_HOME/claude` (if XDG_CONFIG_HOME is set)
+3. `~/.claude` (default)
 
-## Color Scheme
-
-- **USER**: Blue (user input)
-- **ASSISTANT**: Green (Claude Code responses)
-- **TOOL**: Cyan (tool execution results)
-- **Tool names**: Yellow
-- **Timestamps**: Gray
-
-## Architecture
-
-Module structure (~1900 lines):
-
-- **main.go** (341 lines): Entry point, flag parsing, input detection
-- **display.go** (738 lines): Display logic, color management, tool-specific display handlers
-- **filter.go** (360 lines): Role and tool filtering, glob pattern matching
-- **json_output.go** (44 lines): JSON output formatting
-- **pricing.go** (116 lines): Token cost calculation
-- **main_test.go** (312 lines): Test suite
-
-### Processing Flow
-
-1. **Input Detection**: Auto-detect stdin (streaming/buffered) or project files
-2. **Two-pass Processing**:
-   - Streaming mode: Real-time line-by-line processing
-   - Buffered mode: First pass collects tool ID→name mappings, second pass displays
-3. **Filtering**: Tool-based priority filtering when `--tool` is specified
-4. **Display**: Role-specific handlers with special formatting for MCP tools
+Project files are stored as: `[config-dir]/projects/[encoded-path]/[UUID].jsonl`
 
 ## Development
 
 ```bash
-# Build
-make build
-
-# Run tests
-make test
-
-# Run all checks and build (fmt, lint, test, build)
-make all
-
-# Format code
-make fmt
-
-# Lint code
-make lint
+git clone https://github.com/Sixeight/ccl.git
+cd ccl
+make all     # fmt, lint, test, and build
+make test    # run tests only
+make build   # build binary only
 ```
-
-### Notes
-
-- No external dependencies (uses only Go standard library)
-- Flags must be specified before the file argument
-- Tests run with timezone set to `UTC`
-
-## Project File Location
-
-Claude Code project files are stored at:
-
-```
-~/.config/claude/projects/[project-path]/[UUID].jsonl
-```
-
-ccl automatically finds the project file corresponding to your current directory.
 
 ## License
 
 MIT License
-
-## Contributing
-
-Issues and Pull Requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
