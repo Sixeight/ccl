@@ -29,6 +29,8 @@ type Config struct {
 	ShowVersion  bool
 	ShowAllTools bool
 	Follow       bool
+	ListProjects bool
+	ListCurrent  bool
 }
 
 var cfg Config
@@ -39,11 +41,17 @@ var (
 )
 
 func init() {
+	setupFlags()
+	flag.Usage = printUsage
+}
+
+func setupFlags() {
 	flag.StringVar(&cfg.ProjectPath, "p", "", "path to Claude Code project file")
 	flag.BoolVar(&cfg.ShowVersion, "version", false, "show version")
 	flag.BoolVar(&cfg.NoColor, "no-color", false, "disable color output")
 	flag.BoolVar(&cfg.Compact, "compact", false, "compact output mode")
 	flag.BoolVar(&cfg.Verbose, "verbose", false, "verbose output (show tool input details)")
+	flag.BoolVar(&cfg.Verbose, "v", false, "verbose output (show tool input details)")
 	flag.StringVar(&cfg.Role, "role", "", "filter by role (user,assistant,tool)")
 	flag.StringVar(&cfg.ToolFilter, "tool", "", "filter by tool name (supports glob: Bash,*Edit,Todo*)")
 	flag.BoolVar(&cfg.ShowAllTools, "tools", false, "show all tool calls (equivalent to --tool '*')")
@@ -55,38 +63,46 @@ func init() {
 	flag.BoolVar(&jsonFlag, "json", false, "shortcut for --format json")
 	flag.BoolVar(&cfg.Follow, "f", false, "follow mode - continuously monitor for new entries (like tail -f)")
 	flag.BoolVar(&followFlag, "follow", false, "follow mode - continuously monitor for new entries (like tail -f)")
+	flag.BoolVar(&cfg.ListProjects, "ls", false, "list project file paths only (for piping)")
+	flag.BoolVar(&cfg.ListProjects, "list-projects", false, "list project file paths only (for piping)")
+	flag.BoolVar(&cfg.ListCurrent, "lc", false, "list current directory's project files only")
+	flag.BoolVar(&cfg.ListCurrent, "list-current", false, "list current directory's project files only")
+}
 
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "ccl - Claude Code Log viewer (version %s)\n\n", version)
-		fmt.Fprintf(os.Stderr, "A tool to display Claude Code project files in a human-readable format.\n\n")
-		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS] [FILE]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  # Display conversation from current project\n")
-		fmt.Fprintf(os.Stderr, "  # (searches in CLAUDE_CONFIG_DIR, XDG_CONFIG_HOME/claude, or ~/.claude)\n")
-		fmt.Fprintf(os.Stderr, "  ccl\n\n")
-		fmt.Fprintf(os.Stderr, "  # Display specific project file\n")
-		fmt.Fprintf(os.Stderr, "  ccl project.jsonl\n\n")
-		fmt.Fprintf(os.Stderr, "  # Compact mode (less verbose)\n")
-		fmt.Fprintf(os.Stderr, "  ccl --compact\n\n")
-		fmt.Fprintf(os.Stderr, "  # Filter by role\n")
-		fmt.Fprintf(os.Stderr, "  ccl --role user,assistant\n\n")
-		fmt.Fprintf(os.Stderr, "  # Show all tool calls\n")
-		fmt.Fprintf(os.Stderr, "  ccl --tools\n")
-		fmt.Fprintf(os.Stderr, "  ccl --tool '*'\n\n")
-		fmt.Fprintf(os.Stderr, "  # Filter by tool name\n")
-		fmt.Fprintf(os.Stderr, "  ccl --tool Bash,Edit\n\n")
-		fmt.Fprintf(os.Stderr, "  # Use glob patterns\n")
-		fmt.Fprintf(os.Stderr, "  ccl --tool \"*Edit\"     # All Edit tools\n")
-		fmt.Fprintf(os.Stderr, "  ccl --tool \"Todo*\"     # All Todo tools\n\n")
-		fmt.Fprintf(os.Stderr, "  # Show only Bash tool results\n")
-		fmt.Fprintf(os.Stderr, "  ccl --tool Bash\n\n")
-		fmt.Fprintf(os.Stderr, "  # JSON output\n")
-		fmt.Fprintf(os.Stderr, "  ccl --json\n\n")
-		fmt.Fprintf(os.Stderr, "  # Follow mode (like tail -f)\n")
-		fmt.Fprintf(os.Stderr, "  ccl -f\n")
-	}
+func printUsage() {
+	fmt.Fprintf(os.Stderr, "ccl - Claude Code Log viewer (version %s)\n\n", version)
+	fmt.Fprintf(os.Stderr, "A tool to display Claude Code project files in a human-readable format.\n\n")
+	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS] [FILE]\n\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Options:\n")
+	flag.PrintDefaults()
+	fmt.Fprintf(os.Stderr, "\nExamples:\n")
+	fmt.Fprintf(os.Stderr, "  # Display conversation from current project\n")
+	fmt.Fprintf(os.Stderr, "  # (searches in CLAUDE_CONFIG_DIR, XDG_CONFIG_HOME/claude, or ~/.claude)\n")
+	fmt.Fprintf(os.Stderr, "  ccl\n\n")
+	fmt.Fprintf(os.Stderr, "  # Display specific project file\n")
+	fmt.Fprintf(os.Stderr, "  ccl project.jsonl\n\n")
+	fmt.Fprintf(os.Stderr, "  # Compact mode (less verbose)\n")
+	fmt.Fprintf(os.Stderr, "  ccl --compact\n\n")
+	fmt.Fprintf(os.Stderr, "  # Filter by role\n")
+	fmt.Fprintf(os.Stderr, "  ccl --role user,assistant\n\n")
+	fmt.Fprintf(os.Stderr, "  # Show all tool calls\n")
+	fmt.Fprintf(os.Stderr, "  ccl --tools\n")
+	fmt.Fprintf(os.Stderr, "  ccl --tool '*'\n\n")
+	fmt.Fprintf(os.Stderr, "  # Filter by tool name\n")
+	fmt.Fprintf(os.Stderr, "  ccl --tool Bash,Edit\n\n")
+	fmt.Fprintf(os.Stderr, "  # Use glob patterns\n")
+	fmt.Fprintf(os.Stderr, "  ccl --tool \"*Edit\"     # All Edit tools\n")
+	fmt.Fprintf(os.Stderr, "  ccl --tool \"Todo*\"     # All Todo tools\n\n")
+	fmt.Fprintf(os.Stderr, "  # Show only Bash tool results\n")
+	fmt.Fprintf(os.Stderr, "  ccl --tool Bash\n\n")
+	fmt.Fprintf(os.Stderr, "  # JSON output\n")
+	fmt.Fprintf(os.Stderr, "  ccl --json\n\n")
+	fmt.Fprintf(os.Stderr, "  # Follow mode (like tail -f)\n")
+	fmt.Fprintf(os.Stderr, "  ccl -f\n\n")
+	fmt.Fprintf(os.Stderr, "  # List project paths (for piping)\n")
+	fmt.Fprintf(os.Stderr, "  ccl --list-projects | head -1 | xargs ccl\n\n")
+	fmt.Fprintf(os.Stderr, "  # List current directory's project files\n")
+	fmt.Fprintf(os.Stderr, "  ccl --list-current\n")
 }
 
 func main() {
@@ -116,6 +132,18 @@ func main() {
 
 	if cfg.ShowVersion {
 		fmt.Printf("ccl version %s\n", version)
+		return
+	}
+
+	// Handle list projects flag
+	if cfg.ListProjects {
+		listProjectFiles()
+		return
+	}
+
+	// Handle list current flag
+	if cfg.ListCurrent {
+		listCurrentProjectFiles()
 		return
 	}
 
@@ -459,6 +487,219 @@ func processBuffered(reader io.Reader) error {
 	}
 
 	return nil
+}
+
+// listProjectFiles finds and displays all available project files
+func listProjectFiles() {
+	configDir := getClaudeConfigDir()
+	if configDir == "" {
+		fmt.Fprintf(os.Stderr, "Error: Could not determine Claude config directory\n")
+		return
+	}
+
+	projectsDir := filepath.Join(configDir, "projects")
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "No projects directory found at %s\n", projectsDir)
+		} else {
+			fmt.Fprintf(os.Stderr, "Error reading projects directory: %v\n", err)
+		}
+		return
+	}
+
+	var projectFiles []projectFile
+
+	// Get current working directory for comparison
+	cwd, _ := os.Getwd()
+	currentEncoded := encodeDirectoryPath(cwd)
+
+	// Find all project files
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		projectDir := filepath.Join(projectsDir, entry.Name())
+		files, err := os.ReadDir(projectDir)
+		if err != nil {
+			continue
+		}
+
+		// Look for JSONL files
+		for _, file := range files {
+			if file.IsDir() || !strings.HasSuffix(file.Name(), ".jsonl") {
+				continue
+			}
+			info, err := file.Info()
+			if err != nil {
+				continue
+			}
+
+			fullPath := filepath.Join(projectDir, file.Name())
+			decoded := decodeDirectoryPath(entry.Name())
+
+			projectFiles = append(projectFiles, projectFile{
+				path:    fullPath,
+				decoded: decoded,
+				modTime: info.ModTime(),
+				size:    info.Size(),
+				current: entry.Name() == currentEncoded,
+			})
+		}
+	}
+
+	if len(projectFiles) == 0 {
+		fmt.Println("No project files found")
+		return
+	}
+
+	// Sort by modification time (most recent first)
+	for i := 0; i < len(projectFiles); i++ {
+		for j := i + 1; j < len(projectFiles); j++ {
+			if projectFiles[j].modTime.After(projectFiles[i].modTime) {
+				projectFiles[i], projectFiles[j] = projectFiles[j], projectFiles[i]
+			}
+		}
+	}
+
+	// Display project files
+	displayProjectFiles(projectFiles)
+}
+
+// listCurrentProjectFiles finds and displays project files for current directory only
+func listCurrentProjectFiles() {
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting current directory: %v\n", err)
+		return
+	}
+
+	configDir := getClaudeConfigDir()
+	if configDir == "" {
+		fmt.Fprintf(os.Stderr, "Error: Could not determine Claude config directory\n")
+		return
+	}
+
+	// Encode current directory path
+	encoded := encodeDirectoryPath(cwd)
+	projectDir := filepath.Join(configDir, "projects", encoded)
+
+	// Check if project directory exists
+	if _, statErr := os.Stat(projectDir); os.IsNotExist(statErr) {
+		// No project files for current directory
+		return
+	}
+
+	// Read project directory
+	files, err := os.ReadDir(projectDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading project directory: %v\n", err)
+		return
+	}
+
+	// Collect JSONL files
+	var projectFiles []projectFile
+
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), ".jsonl") {
+			info, err := file.Info()
+			if err != nil {
+				continue
+			}
+
+			fullPath := filepath.Join(projectDir, file.Name())
+			projectFiles = append(projectFiles, projectFile{
+				path:    fullPath,
+				modTime: info.ModTime(),
+				size:    info.Size(),
+			})
+		}
+	}
+
+	// Sort by modification time (most recent first)
+	for i := 0; i < len(projectFiles); i++ {
+		for j := i + 1; j < len(projectFiles); j++ {
+			if projectFiles[j].modTime.After(projectFiles[i].modTime) {
+				projectFiles[i], projectFiles[j] = projectFiles[j], projectFiles[i]
+			}
+		}
+	}
+
+	// Display paths
+	displayProjectFiles(projectFiles)
+}
+
+// projectFile represents a Claude project file
+type projectFile struct {
+	modTime time.Time
+	path    string
+	decoded string
+	size    int64
+	current bool
+}
+
+// displayProjectFiles outputs the project files in the requested format
+func displayProjectFiles(projectFiles []projectFile) {
+	if cfg.OutputFormat == "json" {
+		displayProjectFilesJSON(projectFiles)
+	} else {
+		displayProjectFilesText(projectFiles)
+	}
+}
+
+// displayProjectFilesJSON outputs project files in JSON format
+func displayProjectFilesJSON(projectFiles []projectFile) {
+	output := make([]map[string]interface{}, 0, len(projectFiles))
+	for _, pf := range projectFiles {
+		entry := map[string]interface{}{
+			"path": pf.path,
+		}
+		if cfg.Verbose {
+			entry["updated_at"] = pf.modTime.Format(time.RFC3339)
+			entry["size"] = pf.size
+			entry["size_human"] = formatFileSize(pf.size)
+		}
+		output = append(output, entry)
+	}
+	jsonData, _ := json.MarshalIndent(output, "", "  ")
+	fmt.Println(string(jsonData))
+}
+
+// displayProjectFilesText outputs project files in text format
+func displayProjectFilesText(projectFiles []projectFile) {
+	for _, pf := range projectFiles {
+		if cfg.Verbose {
+			fmt.Printf("%s\t%s\t%s\n",
+				pf.path,
+				pf.modTime.Format("2006-01-02 15:04:05"),
+				formatFileSize(pf.size))
+		} else {
+			fmt.Println(pf.path)
+		}
+	}
+}
+
+// formatFileSize formats bytes into human-readable format like ls -l
+func formatFileSize(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%c", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// decodeDirectoryPath reverses the encoding to get original path
+func decodeDirectoryPath(encoded string) string {
+	// This is a simple approximation - we can't perfectly reverse it
+	// but we can make it more readable
+	decoded := strings.ReplaceAll(encoded, "-", "/")
+	return decoded
 }
 
 // Collect tool use information from assistant messages
