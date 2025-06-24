@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**ccl (Claude Code Log)** is a CLI tool that converts Claude Code project files from JSONL format to human-readable format. It automatically detects project files from `~/.config/claude/projects/` and provides filtering, streaming, and formatting capabilities.
+**ccl (Claude Code Log)** is a CLI tool that converts Claude Code project files from JSONL format to human-readable format. It automatically detects project files from `~/.config/claude/projects/` and provides filtering, streaming, formatting capabilities, and project discovery features.
 
 ## Development Commands
 
@@ -24,8 +24,14 @@ go test -v -run TestFormatTimestamp
 # Format code
 make fmt
 
-# Lint code
+# Lint code  
 make lint
+
+# Run tests with coverage
+make test-coverage
+
+# Clean build artifacts
+make clean
 
 # Install globally
 go install github.com/Sixeight/ccl@latest
@@ -36,16 +42,16 @@ go install github.com/Sixeight/ccl@latest
 
 ## Architecture
 
-The project has been refactored from a single-file design into a modular architecture (~1900 lines total):
+The project has been refactored from a single-file design into a modular architecture:
 
 ### File Structure
 
-- **main.go** (341 lines): Entry point, flag parsing, input detection, and orchestration
-- **display.go** (738 lines): All display logic including formatting, color management, and tool-specific display handlers
-- **filter.go** (360 lines): Filtering logic for roles and tools, including glob pattern matching
-- **json_output.go** (44 lines): JSON output formatting
-- **pricing.go** (116 lines): Token cost calculation (optional feature)
-- **main_test.go** (312 lines): Test suite
+- **main.go**: Entry point, flag parsing, input detection, project discovery, and orchestration
+- **display.go**: All display logic including formatting, color management, and tool-specific display handlers
+- **filter.go**: Filtering logic for roles and tools, including glob pattern matching
+- **json_output.go**: JSON output formatting
+- **pricing.go**: Token cost calculation (optional feature)
+- **main_test.go**: Test suite
 
 ### Core Processing Flow
 
@@ -63,16 +69,25 @@ The project has been refactored from a single-file design into a modular archite
 - `displayUserMessage()`, `displayAssistantMessage()`: Role-specific handlers
 - `displayMCPToolInput()`: Special handler for MCP tools (key: value format with truncation)
 - `displayToolUse()`: Formats tool invocations based on tool type
+- `displayProjectFiles()`, `displayProjectFilesJSON()`, `displayProjectFilesText()`: Project file listing
 
 **Filtering Logic** (`filter.go`):
 - `shouldDisplayEntryWithToolInfo()`: Main filter with tool-priority logic
 - `shouldDisplayAssistantWithTools()`: Filters assistant messages containing tools
 - `matchGlobPattern()`: Recursive glob matching supporting `*` and `?`
 
+**Project Discovery** (`main.go`):
+- `listProjectFiles()`: Lists all available project files with sorting
+- `listCurrentProjectFiles()`: Lists only current directory's project files
+- `getClaudeConfigDir()`: Determines Claude config directory following the hierarchy
+- `encodeDirectoryPath()`: Encodes directory paths for project file matching
+- `formatFileSize()`: Human-readable file sizes (like `ls -l`)
+
 **Input/Output**:
 - JSON output preserves original format when `--json` flag is used
 - Streaming detection switches between real-time and buffered processing
 - MCP tool inputs display in readable key: value format with long content truncation
+- Project listing supports both simple path output and verbose mode with metadata
 
 ## Important Implementation Details
 
@@ -93,6 +108,21 @@ Due to flag parsing, options must come before the file argument:
 ./ccl file.jsonl --tool "Bash"    # Won't work
 ```
 
+### Project File Detection
+The tool searches for project files in this order:
+1. `$CLAUDE_CONFIG_DIR` (if set)
+2. `$XDG_CONFIG_HOME/claude` (if XDG_CONFIG_HOME is set)  
+3. `~/.claude` (default)
+
+Project files are stored as: `[config-dir]/projects/[encoded-path]/[UUID].jsonl`
+
+### Linting and Code Quality
+The project uses comprehensive linting with `golangci-lint`. When making changes:
+- Functions should have cyclomatic complexity ≤ 15
+- Pre-allocate slices when size is known
+- Avoid variable shadowing
+- Keep functions under 50 statements
+
 ### Test Timezone Handling
 Tests set `TZ=UTC` to ensure consistent timestamp formatting across different environments.
 
@@ -101,5 +131,5 @@ Tests set `TZ=UTC` to ensure consistent timestamp formatting across different en
 - No external dependencies - uses only Go standard library
 - Binary file `ccl` is currently tracked in git - consider adding to .gitignore
 - When adding new display formats, update both text display (`display.go`) and JSON output (`json_output.go`)
+- The `projectFile` struct is used for both `listProjectFiles()` and `listCurrentProjectFiles()` to maintain consistency
 - MUST NOT commit without explicit instruction
-

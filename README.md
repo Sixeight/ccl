@@ -1,6 +1,6 @@
 # ccl - Claude Code Log
 
-View Claude Code project files in a human-readable format with powerful filtering and search capabilities.
+Simple Claude Code project files viewer.
 
 ## Quick Start
 
@@ -25,6 +25,7 @@ tail -f project.jsonl | ccl
 - **Real-time streaming** - Watch conversations as they happen
 - **Multiple formats** - Text (colored), JSON, or compact output
 - **Cost tracking** - Optional token usage and pricing information
+- **Project discovery** - List and access all Claude Code project files easily
 
 ## Common Usage
 
@@ -55,6 +56,32 @@ ccl --no-color   # Plain text without colors
 ccl --json       # Original JSON format for piping
 ccl --cost       # Include token costs
 ccl -f           # Follow mode (like tail -f)
+ccl -v           # Verbose output with tool details
+```
+
+### Project Management
+
+```bash
+# List all project files
+ccl --list-projects
+ccl -ls
+
+# List current directory's project files
+ccl --list-current
+ccl -lc
+
+# Verbose listing with timestamps and sizes
+ccl -v -ls
+ccl -v -lc
+
+# Open most recent project
+ccl -ls | head -1 | xargs ccl
+
+# Search and open specific project
+ccl -ls | grep "myproject" | xargs ccl
+
+# Get project info as JSON
+ccl --json -v -ls | jq '.[0]'
 ```
 
 ### Advanced Queries
@@ -68,6 +95,9 @@ ccl --json | jq 'select(.timestamp >= "2024-01-01")'
 
 # Count messages by type
 ccl --json | jq -s 'group_by(.type) | map({type: .[0].type, count: length})'
+
+# Find largest project files
+ccl --json -v -ls | jq 'sort_by(.size) | reverse | .[0:5]'
 ```
 
 ## Example Output
@@ -116,3 +146,4 @@ make build   # build binary only
 ## License
 
 MIT License
+
