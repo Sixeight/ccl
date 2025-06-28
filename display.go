@@ -470,97 +470,49 @@ func displayToolInputAsKeyValue(input map[string]interface{}, indent string) {
 func displayToolInputValue(key string, value interface{}) {
 	switch v := value.(type) {
 	case string:
-		displayToolInputString(key, v)
+		// Path keys get special treatment
+		if isPathKey(key) {
+			fmt.Printf("%s\n", v)
+		} else {
+			fmt.Printf("%s\n", formatStringValue(v, 100))
+		}
 	case []interface{}:
-		displayToolInputArray(v)
+		fmt.Printf("[%d items]\n", len(v))
 	case map[string]interface{}:
-		displayToolInputObject(v)
+		fmt.Printf("{%d keys}\n", len(v))
 	case bool, float64, int:
 		fmt.Printf("%v\n", v)
 	case nil:
 		fmt.Printf("null\n")
 	default:
-		displayToolInputDefault(value)
+		// JSON fallback for complex types
+		if data, err := json.Marshal(value); err == nil {
+			fmt.Printf("%s\n", formatStringValue(string(data), 100))
+		} else {
+			fmt.Printf("%v\n", value)
+		}
 	}
 }
 
-// Display string value with appropriate truncation
-func displayToolInputString(key, value string) {
-	// Always show full path for file-related keys
-	isPathKey := key == "file_path" || key == "path" || strings.HasSuffix(key, "_path")
-
-	switch {
-	case isPathKey:
-		// Show full content for paths
-		fmt.Printf("%s\n", value)
-	case len(value) > 100:
-		// Truncate very long strings
-		fmt.Printf("%s\n", truncateRunes(value, 80))
-	case strings.Contains(value, "\n"):
-		// For multi-line strings, show first line only
-		lines := strings.Split(value, "\n")
+// formatStringValue formats strings with truncation and multi-line handling
+func formatStringValue(s string, maxLen int) string {
+	if strings.Contains(s, "\n") {
+		lines := strings.Split(s, "\n")
 		firstLine := strings.TrimSpace(lines[0])
 		if len(lines) > 1 {
-			fmt.Printf("%s... (%d more lines)\n", truncateRunes(firstLine, 60), len(lines)-1)
-		} else {
-			fmt.Printf("%s\n", firstLine)
+			return fmt.Sprintf("%s... (%d more lines)", truncateRunes(firstLine, 60), len(lines)-1)
 		}
-	default:
-		fmt.Printf("%s\n", value)
+		return firstLine
 	}
-}
-
-// Display array values
-func displayToolInputArray(v []interface{}) {
-	// For arrays, show count and type
-	fmt.Printf("[%d items]\n", len(v))
-}
-
-// Display object values
-func displayToolInputObject(v map[string]interface{}) {
-	// For objects, show key count
-	fmt.Printf("{%d keys}\n", len(v))
-}
-
-// Display default/unknown type values
-func displayToolInputDefault(value interface{}) {
-	// For other types, convert to JSON
-	if data, err := json.Marshal(value); err == nil {
-		jsonStr := string(data)
-		if len(jsonStr) <= 100 {
-			fmt.Printf("%s\n", jsonStr)
-		} else {
-			fmt.Printf("%s\n", truncateRunes(jsonStr, 80))
-		}
-	} else {
-		fmt.Printf("%v\n", value)
+	if len(s) > maxLen {
+		return truncateRunes(s, 80)
 	}
+	return s
 }
 
-// Display tool result string content
-func displayToolResultString(content, indent string) bool {
-	if content == "" {
-		return false
-	}
-	// Show first 10 lines with truncation notice
-	displayTextTruncated(content, indent, 10)
-	return true
-}
-
-// Display tool result array content
-func displayToolResultArray(content []interface{}, indent string) bool {
-	hasContent := false
-	for _, item := range content {
-		if m, ok := item.(map[string]interface{}); ok {
-			if m["type"] == "text" {
-				if text, ok := m["text"].(string); ok && text != "" {
-					hasContent = true
-					displayTextTruncated(text, indent, 10)
-				}
-			}
-		}
-	}
-	return hasContent
+// isPathKey checks if a key represents a file path
+func isPathKey(key string) bool {
+	return key == "file_path" || key == "path" || strings.HasSuffix(key, "_path")
 }
 
 // Display tool result content with full context
@@ -576,13 +528,23 @@ func displayToolResultFull(result map[string]interface{}, indent, toolName strin
 		return
 	}
 
-	// Display content - tool_result content is a string, not an array
+	// Display content - handle both string and array types
 	hasContent := false
 	switch content := result["content"].(type) {
 	case string:
-		hasContent = displayToolResultString(content, indent)
+		if content != "" {
+			displayTextTruncated(content, indent, 10)
+			hasContent = true
+		}
 	case []interface{}:
-		hasContent = displayToolResultArray(content, indent)
+		for _, item := range content {
+			if m, ok := item.(map[string]interface{}); ok && m["type"] == "text" {
+				if text, ok := m["text"].(string); ok && text != "" {
+					displayTextTruncated(text, indent, 10)
+					hasContent = true
+				}
+			}
+		}
 	}
 
 	// Show "(No content)" if no content was displayed

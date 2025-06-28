@@ -105,26 +105,7 @@ func shouldDisplayToolResult(entry map[string]interface{}, toolUseMap map[string
 		return true
 	}
 
-	// Check excludes first
-	for _, pattern := range toolExcludeList {
-		if matchGlobPattern(pattern, toolName) {
-			return false
-		}
-	}
-
-	// If no filter specified, display all non-excluded
-	if len(toolFilterList) == 0 {
-		return true
-	}
-
-	// Check if tool matches any filter pattern
-	for _, pattern := range toolFilterList {
-		if matchGlobPattern(pattern, toolName) {
-			return true
-		}
-	}
-
-	return false
+	return applyToolFilters(toolName, toolFilterList, toolExcludeList)
 }
 
 // Get tool name from content item
@@ -163,6 +144,17 @@ func isToolFiltered(toolName string, filterList []string) bool {
 	return false
 }
 
+// applyToolFilters checks if a tool name passes include/exclude filters
+func applyToolFilters(toolName string, includeList, excludeList []string) bool {
+	// Check excludes first
+	if isToolExcluded(toolName, excludeList) {
+		return false
+	}
+
+	// Check if tool matches include filter
+	return isToolFiltered(toolName, includeList)
+}
+
 // Check if an assistant message with tools should be displayed
 func shouldDisplayAssistantWithTools(entry map[string]interface{}, toolUseMap map[string]string) bool {
 	toolFilterList := parseCommaSeparated(cfg.ToolFilter)
@@ -184,7 +176,7 @@ func shouldDisplayAssistantWithTools(entry map[string]interface{}, toolUseMap ma
 		return true
 	}
 
-	var hasFilteredTool bool
+	// Check if any tool passes filters
 	for _, item := range content {
 		m, ok := item.(map[string]interface{})
 		if !ok || m["type"] != "tool_use" {
@@ -192,21 +184,12 @@ func shouldDisplayAssistantWithTools(entry map[string]interface{}, toolUseMap ma
 		}
 
 		toolName := getToolName(m, toolUseMap)
-
-		// Check excludes
-		if isToolExcluded(toolName, toolExcludeList) {
-			continue
-		}
-
-		// Check if tool matches filter
-		if isToolFiltered(toolName, toolFilterList) {
-			hasFilteredTool = true
-			break
+		if applyToolFilters(toolName, toolFilterList, toolExcludeList) {
+			return true
 		}
 	}
 
-	// Show message only if it has filtered tools
-	return hasFilteredTool
+	return false
 }
 
 // Check if a user message with tool results should be displayed
@@ -304,26 +287,7 @@ func shouldDisplayToolResultInUser(entry map[string]interface{}, toolUseMap map[
 		return true
 	}
 
-	// Check excludes first
-	for _, pattern := range toolExcludeList {
-		if matchGlobPattern(pattern, toolName) {
-			return false
-		}
-	}
-
-	// If no filter specified, display all non-excluded
-	if len(toolFilterList) == 0 {
-		return true
-	}
-
-	// Check if tool matches any filter pattern
-	for _, pattern := range toolFilterList {
-		if matchGlobPattern(pattern, toolName) {
-			return true
-		}
-	}
-
-	return false
+	return applyToolFilters(toolName, toolFilterList, toolExcludeList)
 }
 
 // Match glob pattern against string

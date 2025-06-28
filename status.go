@@ -49,59 +49,97 @@ type LocalSettings struct {
 	} `json:"permissions"`
 }
 
-// showProjectInfo displays project information from .claude.json
-func showProjectInfo(projectID string) {
-	// Load global .claude.json
+// loadClaudeConfig loads the global .claude.json configuration
+func loadClaudeConfig() (*ClaudeConfig, error) {
 	configDir := getClaudeConfigDir()
 	configPath := filepath.Join(configDir, ".claude.json")
 
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", configPath, err)
-		return
+		return nil, fmt.Errorf("reading %s: %w", configPath, err)
 	}
 
 	var config ClaudeConfig
 	if err := json.Unmarshal(configData, &config); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing .claude.json: %v\n", err)
-		return
+		return nil, fmt.Errorf("parsing .claude.json: %w", err)
 	}
 
-	// If --all flag is set, show all projects
-	if cfg.ShowInfoAll {
-		showAllProjectsInfo(config)
-		return
-	}
+	return &config, nil
+}
 
+// getProjectPathAndInfo retrieves project path and info based on projectID or current directory
+func getProjectPathAndInfo(config *ClaudeConfig, projectID string) (string, ProjectInfo, error) {
 	var projectPath string
 	var projectInfo ProjectInfo
 	var found bool
 
-	// If projectID is provided, find project by ID
 	if projectID != "" {
-		path, err := findProjectByID(config, projectID)
+		path, err := findProjectByID(*config, projectID)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			return
+			return "", ProjectInfo{}, err
 		}
 		projectPath = path
 		projectInfo = config.Projects[path]
 		found = true
 	} else {
-		// Get current directory
 		cwd, err := os.Getwd()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error getting current directory: %v\n", err)
-			return
+			return "", ProjectInfo{}, fmt.Errorf("getting current directory: %w", err)
 		}
 		projectPath = cwd
 		projectInfo, found = config.Projects[cwd]
 	}
 
-	// Find project info
 	if !found {
-		fmt.Println("No project history found.")
-		fmt.Printf("\nAvailable projects: %d\n", len(config.Projects))
+		return projectPath, ProjectInfo{}, fmt.Errorf("no project history found")
+	}
+
+	return projectPath, projectInfo, nil
+}
+
+// displayProjectMessages displays recent messages from project history
+func displayProjectMessages(projectInfo ProjectInfo) {
+	totalCommands := len(projectInfo.History)
+	if totalCommands == 0 {
+		fmt.Println("No messages yet")
+		return
+	}
+
+	fmt.Println("Recent messages (last 5):")
+	displayLimit := 5
+	if totalCommands < displayLimit {
+		displayLimit = totalCommands
+	}
+
+	for i := 0; i < displayLimit; i++ {
+		entry := projectInfo.History[i]
+		display := truncateAtNewline(entry.Display, 70)
+		fmt.Printf("  %3d. %s\n", i+1, display)
+	}
+}
+
+// showProjectInfo displays project information from .claude.json
+func showProjectInfo(projectID string) {
+	config, err := loadClaudeConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return
+	}
+
+	// If --all flag is set, show all projects
+	if cfg.ShowInfoAll {
+		showAllProjectsInfo(*config)
+		return
+	}
+
+	projectPath, projectInfo, err := getProjectPathAndInfo(config, projectID)
+	if err != nil {
+		if err.Error() == "no project history found" {
+			fmt.Println("No project history found.")
+			fmt.Printf("\nAvailable projects: %d\n", len(config.Projects))
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 		return
 	}
 
@@ -118,25 +156,7 @@ func showProjectInfo(projectID string) {
 	}
 
 	// Display recent messages
-	totalCommands := len(projectInfo.History)
-	if totalCommands > 0 {
-		// Display recent messages (last 5)
-		fmt.Println("Recent messages (last 5):")
-		displayLimit := 5
-		if totalCommands < displayLimit {
-			displayLimit = totalCommands
-		}
-
-		// Display from the beginning (newest first)
-		for i := 0; i < displayLimit; i++ {
-			entry := projectInfo.History[i]
-			// Truncate at newline or max length
-			display := truncateAtNewline(entry.Display, 70)
-			fmt.Printf("  %3d. %s\n", i+1, display)
-		}
-	} else {
-		fmt.Println("No messages yet")
-	}
+	displayProjectMessages(projectInfo)
 
 	// Load and display permissions
 	localSettingsPath := filepath.Join(projectPath, ".claude", "settings.local.json")
@@ -152,7 +172,6 @@ func showProjectInfo(projectID string) {
 		displayMCPServersInfo(config.MCPServers)
 	}
 }
-
 
 // displayLocalSettings displays permission settings from settings.local.json
 func displayLocalSettings(settings LocalSettings) {
@@ -193,7 +212,6 @@ func displayMCPServersInfo(servers map[string]MCPServer) {
 	}
 }
 
-
 // formatDuration formats a duration in a human-readable way
 func formatDuration(d time.Duration) string {
 	days := int(d.Hours() / 24)
@@ -215,7 +233,6 @@ func formatDuration(d time.Duration) string {
 	minutes := int(d.Minutes())
 	return fmt.Sprintf("%d minute%s", minutes, pluralize(minutes))
 }
-
 
 // pluralize returns "s" if count is not 1
 func pluralize(count int) string {
@@ -345,10 +362,10 @@ func findProjectByID(config ClaudeConfig, query string) (string, error) {
 			projects = append(projects, ps)
 		}
 	}
-	
+
 	// Generate shortened display names
 	shortenProjectPaths(projects)
-	
+
 	// Search by both ID and shortened path
 	for _, p := range projects {
 		// Check ID prefix match
@@ -368,7 +385,7 @@ func findProjectByID(config ClaudeConfig, query string) (string, error) {
 	if len(pathMatches) > 1 {
 		return "", fmt.Errorf("ambiguous path '%s' matches multiple projects", query)
 	}
-	
+
 	// Fall back to ID matches
 	if len(matches) == 0 {
 		return "", fmt.Errorf("no project found with ID or path: %s", query)

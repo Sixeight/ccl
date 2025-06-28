@@ -10,72 +10,163 @@ import (
 )
 
 func TestFormatDuration(t *testing.T) {
-	tests := []struct {
-		duration time.Duration
+	type testCase struct {
 		expected string
-	}{
-		{time.Minute * 30, "30 minutes"},
-		{time.Hour, "1 hour"},
-		{time.Hour * 2, "2 hours"},
-		{time.Hour * 24, "1 day"},
-		{time.Hour * 48, "2 days"},
-		{time.Hour * 24 * 40, "1 month"},
-		{time.Hour * 24 * 65, "2 months"},
-		{time.Hour * 24 * 400, "1 year"},
-		{time.Hour * 24 * 800, "2 years"},
+		duration time.Duration
 	}
 
-	for _, test := range tests {
-		result := formatDuration(test.duration)
-		if result != test.expected {
-			t.Errorf("formatDuration(%v) = %s, expected %s", test.duration, result, test.expected)
-		}
+	tests := map[string]testCase{
+		"30 minutes": {
+			duration: time.Minute * 30,
+			expected: "30 minutes",
+		},
+		"1 hour": {
+			duration: time.Hour,
+			expected: "1 hour",
+		},
+		"2 hours": {
+			duration: time.Hour * 2,
+			expected: "2 hours",
+		},
+		"1 day": {
+			duration: time.Hour * 24,
+			expected: "1 day",
+		},
+		"2 days": {
+			duration: time.Hour * 48,
+			expected: "2 days",
+		},
+		"1 month": {
+			duration: time.Hour * 24 * 40,
+			expected: "1 month",
+		},
+		"2 months": {
+			duration: time.Hour * 24 * 65,
+			expected: "2 months",
+		},
+		"1 year": {
+			duration: time.Hour * 24 * 400,
+			expected: "1 year",
+		},
+		"2 years": {
+			duration: time.Hour * 24 * 800,
+			expected: "2 years",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			result := formatDuration(tc.duration)
+			if result != tc.expected {
+				t.Errorf("formatDuration(%v) = %s, expected %s", tc.duration, result, tc.expected)
+			}
+		})
 	}
 }
 
 func TestPluralize(t *testing.T) {
-	tests := []struct {
-		count    int
+	type testCase struct {
 		expected string
-	}{
-		{0, "s"},
-		{1, ""},
-		{2, "s"},
-		{100, "s"},
+		count    int
 	}
 
-	for _, test := range tests {
-		result := pluralize(test.count)
-		if result != test.expected {
-			t.Errorf("pluralize(%d) = %s, expected %s", test.count, result, test.expected)
-		}
+	tests := map[string]testCase{
+		"zero": {
+			count:    0,
+			expected: "s",
+		},
+		"one": {
+			count:    1,
+			expected: "",
+		},
+		"two": {
+			count:    2,
+			expected: "s",
+		},
+		"many": {
+			count:    100,
+			expected: "s",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			result := pluralize(tc.count)
+			if result != tc.expected {
+				t.Errorf("pluralize(%d) = %s, expected %s", tc.count, result, tc.expected)
+			}
+		})
 	}
 }
 
 func TestTruncateUTF8(t *testing.T) {
-	tests := []struct {
+	type testCase struct {
 		input    string
-		maxRunes int
 		expected string
-	}{
-		{"Hello", 10, "Hello"},
-		{"Hello World", 8, "Hello..."},
-		{"こんにちは世界", 10, "こんにちは世界"},
-		{"日本語のテスト文字列です", 10, "日本語のテスト..."},
-		{"🎉🎊🎈🎆🎇", 10, "🎉🎊🎈🎆🎇"},
-		{"", 5, ""},
-		{"短い", 10, "短い"},
-		{"非常に長い日本語のテキストです", 10, "非常に長い日本..."},
-		{"TODOの内容の色は変えずにアイコン部分と優先度部分だけを変更するようにして", 50, "TODOの内容の色は変えずにアイコン部分と優先度部分だけを変更するようにして"},
-		{"TODOの内容の色は変えずにアイコン部分と優先度部分だけを変更するようにして", 30, "TODOの内容の色は変えずにアイコン部分と優先度部分だ..."},
+		maxRunes int
 	}
 
-	for _, test := range tests {
-		result := truncateUTF8(test.input, test.maxRunes)
-		if result != test.expected {
-			t.Errorf("truncateUTF8(%q, %d) = %q, expected %q",
-				test.input, test.maxRunes, result, test.expected)
-		}
+	tests := map[string]testCase{
+		"short ASCII": {
+			input:    "Hello",
+			maxRunes: 10,
+			expected: "Hello",
+		},
+		"long ASCII": {
+			input:    "Hello World",
+			maxRunes: 8,
+			expected: "Hello...",
+		},
+		"short Japanese": {
+			input:    "こんにちは世界",
+			maxRunes: 10,
+			expected: "こんにちは世界",
+		},
+		"long Japanese": {
+			input:    "日本語のテスト文字列です",
+			maxRunes: 10,
+			expected: "日本語のテスト...",
+		},
+		"emoji": {
+			input:    "🎉🎊🎈🎆🎇",
+			maxRunes: 10,
+			expected: "🎉🎊🎈🎆🎇",
+		},
+		"empty string": {
+			input:    "",
+			maxRunes: 5,
+			expected: "",
+		},
+		"very short Japanese": {
+			input:    "短い",
+			maxRunes: 10,
+			expected: "短い",
+		},
+		"very long Japanese": {
+			input:    "非常に長い日本語のテキストです",
+			maxRunes: 10,
+			expected: "非常に長い日本...",
+		},
+		"long TODO text within limit": {
+			input:    "TODOの内容の色は変えずにアイコン部分と優先度部分だけを変更するようにして",
+			maxRunes: 50,
+			expected: "TODOの内容の色は変えずにアイコン部分と優先度部分だけを変更するようにして",
+		},
+		"long TODO text truncated": {
+			input:    "TODOの内容の色は変えずにアイコン部分と優先度部分だけを変更するようにして",
+			maxRunes: 30,
+			expected: "TODOの内容の色は変えずにアイコン部分と優先度部分だ...",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			result := truncateUTF8(tc.input, tc.maxRunes)
+			if result != tc.expected {
+				t.Errorf("truncateUTF8(%q, %d) = %q, expected %q",
+					tc.input, tc.maxRunes, result, tc.expected)
+			}
+		})
 	}
 }
 
