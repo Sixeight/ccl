@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const version = "0.3.0"
+const version = "0.0.1"
 
 // Config holds all configuration options
 type Config struct {
