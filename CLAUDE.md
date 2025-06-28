@@ -42,59 +42,83 @@ go install github.com/Sixeight/ccl@latest
 
 ## Architecture
 
-The project has been refactored from a single-file design into a modular architecture:
+The project follows a modular architecture with clear separation of concerns:
 
-### File Structure
+### Core Modules
 
-- **main.go**: Entry point, flag parsing, input detection, project discovery, and orchestration
-- **display.go**: All display logic including formatting, color management, and tool-specific display handlers
-- **filter.go**: Filtering logic for roles and tools, including glob pattern matching
-- **json_output.go**: JSON output formatting
+- **main.go**: Entry point, command-line parsing, and orchestration
+  - Handles subcommands (`log` and `status`)
+  - Manages global configuration (`cfg Config`)
+  - Coordinates between different modules
+
+- **project.go**: Project file discovery and management
+  - `listProjectFiles()`: Lists all available project files
+  - `listCurrentProjectFiles()`: Lists only current directory's project files
+  - `encodeDirectoryPath()`: Encodes paths to safe directory names
+  - `shortenProjectNames()`: Creates minimal unique display names
+
+- **status.go**: Project status and information display
+  - `showProjectInfo()`: Displays project history and settings
+  - `searchHistory()`: Searches through project command history
+  - `generateProjectID()`: Creates 7-character SHA256-based IDs
+
+- **display.go**: All display logic and formatting
+  - `displayEntryWithToolInfo()`: Main entry point for displaying
+  - Role-specific handlers for user/assistant/tool messages
+  - Special formatting for MCP tools (key: value format)
+
+- **filter.go**: Filtering logic with glob pattern support
+  - `shouldDisplayEntryWithToolInfo()`: Main filter with tool-priority logic
+  - `matchGlobPattern()`: Recursive glob matching (`*` and `?`)
+
 - **pricing.go**: Token cost calculation (optional feature)
-- **main_test.go**: Test suite
+- **json_output.go**: JSON output formatting
 
-### Core Processing Flow
+### Processing Modes
 
-1. **Input Detection** (`main.go`): Automatically detects stdin type (streaming vs buffered) or finds project files
-2. **Two-Pass Processing**: 
-   - Streaming mode (`processStreaming`): Real-time line-by-line processing
-   - Buffered mode (`processBuffered`): First pass collects tool ID→name mappings, second pass displays
-3. **Filtering** (`filter.go`): Multi-layered filtering with tool-based priority when `--tool` is specified
-4. **Display** (`display.go`): Role-based handlers with special formatting for MCP tools
+1. **Follow mode** (`-f`): Continuously monitors file changes
+2. **Streaming mode**: Real-time line-by-line processing for piped input
+3. **Buffered mode**: Two-pass processing (collect tool mappings → display)
 
-### Key Components
+### Data Flow
 
-**Display Functions** (`display.go`):
-- `displayEntryWithToolInfo()`: Main entry point for displaying
-- `displayUserMessage()`, `displayAssistantMessage()`: Role-specific handlers
-- `displayMCPToolInput()`: Special handler for MCP tools (key: value format with truncation)
-- `displayToolUse()`: Formats tool invocations based on tool type
-- `displayProjectFiles()`, `displayProjectFilesJSON()`, `displayProjectFilesText()`: Project file listing
+```
+Input (stdin/file) → Detection → Processing Mode → Filtering → Display → Output
+                                      ↓
+                              Tool ID Mapping (buffered mode only)
+```
 
-**Filtering Logic** (`filter.go`):
-- `shouldDisplayEntryWithToolInfo()`: Main filter with tool-priority logic
-- `shouldDisplayAssistantWithTools()`: Filters assistant messages containing tools
-- `matchGlobPattern()`: Recursive glob matching supporting `*` and `?`
+## Key Implementation Details
 
-**Project Discovery** (`main.go`):
-- `listProjectFiles()`: Lists all available project files with sorting
-- `listCurrentProjectFiles()`: Lists only current directory's project files
-- `getClaudeConfigDir()`: Determines Claude config directory following the hierarchy
-- `encodeDirectoryPath()`: Encodes directory paths for project file matching
-- `formatFileSize()`: Human-readable file sizes (like `ls -l`)
+### Project File Structure
 
-**Input/Output**:
-- JSON output preserves original format when `--json` flag is used
-- Streaming detection switches between real-time and buffered processing
-- MCP tool inputs display in readable key: value format with long content truncation
-- Project listing shows path, timestamp, and file size metadata
+Project files are stored in: `[config-dir]/projects/[encoded-path]/[UUID].jsonl`
 
-## Important Implementation Details
+The config directory is determined by (in order):
+1. `$CLAUDE_CONFIG_DIR`
+2. `$XDG_CONFIG_HOME/claude`
+3. `~/.claude` (default)
+
+### Path Encoding
+
+Paths are encoded to safe directory names:
+```go
+/Users/sixeight/project → -Users-sixeight-project
+```
+
+### Project ID Generation
+
+Uses first 7 characters of SHA256 hash:
+```go
+sha256("/path/to/project")[:7] → "abc1234"
+```
 
 ### Tool Filtering Priority
+
 When `--tool` filters are specified, they take priority over role filters. This allows filtering by specific tools regardless of message type.
 
 ### MCP Tool Display
+
 Tools starting with `mcp__` get special formatting:
 - Input parameters shown as `key: value` pairs
 - Long strings truncated to 80 characters
@@ -102,28 +126,41 @@ Tools starting with `mcp__` get special formatting:
 - Multi-line strings show first line + line count
 
 ### Flag Ordering
+
 Due to flag parsing, options must come before the file argument:
 ```bash
 ./ccl --tool "Bash" file.jsonl    # Correct
 ./ccl file.jsonl --tool "Bash"    # Won't work
 ```
 
-### Project File Detection
-The tool searches for project files in this order:
-1. `$CLAUDE_CONFIG_DIR` (if set)
-2. `$XDG_CONFIG_HOME/claude` (if XDG_CONFIG_HOME is set)  
-3. `~/.claude` (default)
+## Code Quality Standards
 
-Project files are stored as: `[config-dir]/projects/[encoded-path]/[UUID].jsonl`
+### Linting Rules (golangci-lint)
 
-### Linting and Code Quality
-The project uses comprehensive linting with `golangci-lint`. When making changes:
 - Functions should have cyclomatic complexity ≤ 15
 - Pre-allocate slices when size is known
 - Avoid variable shadowing
 - Keep functions under 50 statements
 
+### Test Structure
+
+Tests use named struct types with explicit field names:
+```go
+type testCase struct {
+    input    string
+    expected string
+}
+
+tests := map[string]testCase{
+    "test name": {
+        input:    "value",
+        expected: "result",
+    },
+}
+```
+
 ### Test Timezone Handling
+
 Tests set `TZ=UTC` to ensure consistent timestamp formatting across different environments.
 
 ## Development Notes
