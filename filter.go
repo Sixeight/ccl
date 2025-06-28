@@ -195,6 +195,18 @@ func shouldDisplayAssistantWithTools(entry map[string]interface{}, toolUseMap ma
 // Check if a user message with tool results should be displayed
 func shouldDisplayUserWithToolResult(entry map[string]interface{}, toolUseMap map[string]string) bool {
 	filterRoles := parseCommaSeparated(cfg.Role)
+	toolFilterList := parseCommaSeparated(cfg.ToolFilter)
+	toolExcludeList := parseCommaSeparated(cfg.ToolExclude)
+	hasToolFilters := len(toolFilterList) > 0 || len(toolExcludeList) > 0
+
+	// If tool filters are specified, only show user messages with matching tool results
+	if hasToolFilters {
+		if hasToolResult(entry) {
+			return shouldDisplayToolResultInUser(entry, toolUseMap)
+		}
+		// Regular user messages are not shown when tool filters are active
+		return false
+	}
 
 	// If no role filters, show all
 	if len(filterRoles) == 0 {
