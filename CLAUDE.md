@@ -19,7 +19,7 @@ make all
 make test
 
 # Run a single test
-go test -v -run TestFormatTimestamp
+go test -run TestFormatTimestamp
 
 # Format code
 make fmt
@@ -87,7 +87,7 @@ The project has been refactored from a single-file design into a modular archite
 - JSON output preserves original format when `--json` flag is used
 - Streaming detection switches between real-time and buffered processing
 - MCP tool inputs display in readable key: value format with long content truncation
-- Project listing supports both simple path output and verbose mode with metadata
+- Project listing shows path, timestamp, and file size metadata
 
 ## Important Implementation Details
 

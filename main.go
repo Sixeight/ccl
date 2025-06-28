@@ -16,108 +16,155 @@ const version = "0.3.0"
 
 // Config holds all configuration options
 type Config struct {
-	Role         string
-	OutputFormat string
-	ToolExclude  string
-	ProjectPath  string
-	ToolFilter   string
-	Compact      bool
-	Verbose      bool
-	NoColor      bool
-	ShowCost     bool
-	ShowTiming   bool
-	ShowVersion  bool
-	ShowAllTools bool
-	Follow       bool
-	ListProjects bool
-	ListCurrent  bool
+	Role          string
+	OutputFormat  string
+	ToolExclude   string
+	ProjectPath   string
+	ToolFilter    string
+	LookDirectory string
+	ShowTiming    bool
+	ShowCost      bool
+	NoColor       bool
+	ShowAllTools  bool
+	Follow        bool
+	StatsAll      bool
+	StatsProjects bool
+	StatsCurrent  bool
+	ShowInfoAll   bool
+	Compact       bool
 }
 
 var cfg Config
-var (
-	textFlag   bool
-	jsonFlag   bool
-	followFlag bool
-)
 
 func init() {
-	setupFlags()
+	// Set default usage function
 	flag.Usage = printUsage
 }
 
-func setupFlags() {
-	flag.StringVar(&cfg.ProjectPath, "p", "", "path to Claude Code project file")
-	flag.BoolVar(&cfg.ShowVersion, "version", false, "show version")
-	flag.BoolVar(&cfg.NoColor, "no-color", false, "disable color output")
-	flag.BoolVar(&cfg.Compact, "compact", false, "compact output mode")
-	flag.BoolVar(&cfg.Verbose, "verbose", false, "verbose output (show tool input details)")
-	flag.BoolVar(&cfg.Verbose, "v", false, "verbose output (show tool input details)")
-	flag.StringVar(&cfg.Role, "role", "", "filter by role (user,assistant,tool)")
-	flag.StringVar(&cfg.ToolFilter, "tool", "", "filter by tool name (supports glob: Bash,*Edit,Todo*)")
-	flag.BoolVar(&cfg.ShowAllTools, "tools", false, "show all tool calls (equivalent to --tool '*')")
-	flag.StringVar(&cfg.ToolExclude, "tool-exclude", "", "exclude tools by name (supports glob)")
-	flag.BoolVar(&cfg.ShowCost, "cost", false, "show token costs (fetches latest pricing)")
-	flag.BoolVar(&cfg.ShowTiming, "timing", false, "show timing information between messages")
-	flag.StringVar(&cfg.OutputFormat, "format", "text", "output format (text, json)")
-	flag.BoolVar(&textFlag, "text", false, "shortcut for --format text")
-	flag.BoolVar(&jsonFlag, "json", false, "shortcut for --format json")
-	flag.BoolVar(&cfg.Follow, "f", false, "follow mode - continuously monitor for new entries (like tail -f)")
-	flag.BoolVar(&followFlag, "follow", false, "follow mode - continuously monitor for new entries (like tail -f)")
-	flag.BoolVar(&cfg.ListProjects, "ls", false, "list project file paths only (for piping)")
-	flag.BoolVar(&cfg.ListProjects, "list-projects", false, "list project file paths only (for piping)")
-	flag.BoolVar(&cfg.ListCurrent, "lc", false, "list current directory's project files only")
-	flag.BoolVar(&cfg.ListCurrent, "list-current", false, "list current directory's project files only")
+// LogConfig holds flags specific to the log command
+type LogConfig struct {
+	jsonFlag bool
+}
+
+var logConfig LogConfig
+
+// setupLogFlags sets up flags for the log subcommand
+func setupLogFlags(logCmd *flag.FlagSet) {
+	logCmd.StringVar(&cfg.ProjectPath, "p", "", "path to Claude Code project file")
+	logCmd.BoolVar(&cfg.NoColor, "no-color", false, "disable color output")
+	logCmd.BoolVar(&cfg.Compact, "compact", false, "compact output mode")
+	logCmd.StringVar(&cfg.Role, "role", "", "filter by role (user,assistant,tool)")
+	logCmd.StringVar(&cfg.ToolFilter, "tool", "", "filter by tool name (supports glob: Bash,*Edit,Todo*)")
+	logCmd.BoolVar(&cfg.ShowAllTools, "tools", false, "show all tool calls (equivalent to --tool '*')")
+	logCmd.StringVar(&cfg.ToolExclude, "tool-exclude", "", "exclude tools by name (supports glob)")
+	logCmd.BoolVar(&cfg.ShowCost, "cost", false, "show token costs (fetches latest pricing)")
+	logCmd.BoolVar(&cfg.ShowTiming, "timing", false, "show timing information between messages")
+	logCmd.StringVar(&cfg.OutputFormat, "format", "text", "output format (text, json)")
+	logCmd.BoolVar(&logConfig.jsonFlag, "json", false, "shortcut for --format json")
+	logCmd.BoolVar(&cfg.Follow, "f", false, "follow mode - continuously monitor for new entries (like tail -f)")
+	logCmd.BoolVar(&cfg.StatsProjects, "projects", false, "list project file paths only (for piping)")
+	logCmd.BoolVar(&cfg.StatsCurrent, "current", false, "list current directory's project files only")
+}
+
+// setupStatusFlags sets up flags for the status subcommand
+func setupStatusFlags(statusCmd *flag.FlagSet) {
+	statusCmd.BoolVar(&cfg.StatsAll, "all", false, "show all projects")
+	statusCmd.StringVar(&cfg.LookDirectory, "l", "", "output cd command for project directory")
+	statusCmd.StringVar(&cfg.LookDirectory, "look", "", "output cd command for project directory")
 }
 
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "ccl - Claude Code Log viewer (version %s)\n\n", version)
 	fmt.Fprintf(os.Stderr, "A tool to display Claude Code project files in a human-readable format.\n\n")
-	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS] [FILE]\n\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "Options:\n")
-	flag.PrintDefaults()
-	fmt.Fprintf(os.Stderr, "\nExamples:\n")
+	fmt.Fprintf(os.Stderr, "Usage: %s [command] [options]\n\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Commands:\n")
+	fmt.Fprintf(os.Stderr, "  log      Display project logs (default)\n")
+	fmt.Fprintf(os.Stderr, "  status   Show project status and information\n")
+	fmt.Fprintf(os.Stderr, "  version  Show version information\n")
+	fmt.Fprintf(os.Stderr, "  help     Show this help message\n\n")
+	fmt.Fprintf(os.Stderr, "Examples:\n")
 	fmt.Fprintf(os.Stderr, "  # Display conversation from current project\n")
-	fmt.Fprintf(os.Stderr, "  # (searches in CLAUDE_CONFIG_DIR, XDG_CONFIG_HOME/claude, or ~/.claude)\n")
-	fmt.Fprintf(os.Stderr, "  ccl\n\n")
-	fmt.Fprintf(os.Stderr, "  # Display specific project file\n")
-	fmt.Fprintf(os.Stderr, "  ccl project.jsonl\n\n")
-	fmt.Fprintf(os.Stderr, "  # Compact mode (less verbose)\n")
-	fmt.Fprintf(os.Stderr, "  ccl --compact\n\n")
-	fmt.Fprintf(os.Stderr, "  # Filter by role\n")
-	fmt.Fprintf(os.Stderr, "  ccl --role user,assistant\n\n")
+	fmt.Fprintf(os.Stderr, "  ccl\n")
+	fmt.Fprintf(os.Stderr, "  ccl log\n\n")
+	fmt.Fprintf(os.Stderr, "  # Show project status\n")
+	fmt.Fprintf(os.Stderr, "  ccl status\n\n")
 	fmt.Fprintf(os.Stderr, "  # Show all tool calls\n")
-	fmt.Fprintf(os.Stderr, "  ccl --tools\n")
-	fmt.Fprintf(os.Stderr, "  ccl --tool '*'\n\n")
-	fmt.Fprintf(os.Stderr, "  # Filter by tool name\n")
-	fmt.Fprintf(os.Stderr, "  ccl --tool Bash,Edit\n\n")
-	fmt.Fprintf(os.Stderr, "  # Use glob patterns\n")
-	fmt.Fprintf(os.Stderr, "  ccl --tool \"*Edit\"     # All Edit tools\n")
-	fmt.Fprintf(os.Stderr, "  ccl --tool \"Todo*\"     # All Todo tools\n\n")
-	fmt.Fprintf(os.Stderr, "  # Show only Bash tool results\n")
-	fmt.Fprintf(os.Stderr, "  ccl --tool Bash\n\n")
-	fmt.Fprintf(os.Stderr, "  # JSON output\n")
-	fmt.Fprintf(os.Stderr, "  ccl --json\n\n")
+	fmt.Fprintf(os.Stderr, "  ccl log --tools\n\n")
 	fmt.Fprintf(os.Stderr, "  # Follow mode (like tail -f)\n")
-	fmt.Fprintf(os.Stderr, "  ccl -f\n\n")
-	fmt.Fprintf(os.Stderr, "  # List project paths (for piping)\n")
-	fmt.Fprintf(os.Stderr, "  ccl --list-projects | head -1 | xargs ccl\n\n")
-	fmt.Fprintf(os.Stderr, "  # List current directory's project files\n")
-	fmt.Fprintf(os.Stderr, "  ccl --list-current\n")
+	fmt.Fprintf(os.Stderr, "  ccl log -f\n\n")
+	fmt.Fprintf(os.Stderr, "Use 'ccl [command] --help' for more information about a command.\n")
 }
 
 func main() {
-	flag.Parse()
-
-	// Handle shortcut flags
-	if jsonFlag {
-		cfg.OutputFormat = "json"
-	} else if textFlag {
-		cfg.OutputFormat = "text"
+	// Handle subcommands
+	if len(os.Args) < 2 {
+		// No subcommand provided, default to "log"
+		runLogCommand(os.Args[1:])
+		return
 	}
 
-	// Handle follow flag aliases
-	if followFlag {
-		cfg.Follow = true
+	subcommand := os.Args[1]
+
+	// Check if first argument looks like a flag or file
+	if strings.HasPrefix(subcommand, "-") || fileExists(subcommand) {
+		// It's a flag or file, treat as log command
+		runLogCommand(os.Args[1:])
+		return
+	}
+
+	// Handle subcommands
+	switch subcommand {
+	case "log":
+		runLogCommand(os.Args[2:])
+	case "status":
+		runStatusCommand(os.Args[2:])
+	case "version":
+		fmt.Printf("ccl version %s\n", version)
+	case "help":
+		printUsage()
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", subcommand)
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+// fileExists checks if a file exists
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// runLogCommand runs the log subcommand
+func runLogCommand(args []string) {
+	logCmd := flag.NewFlagSet("log", flag.ExitOnError)
+	setupLogFlags(logCmd)
+
+	logCmd.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: ccl log [options] [file]\n\n")
+		fmt.Fprintf(os.Stderr, "Display Claude Code project logs.\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		logCmd.PrintDefaults()
+	}
+
+	if err := logCmd.Parse(args); err != nil {
+		return
+	}
+
+	// Handle shortcut flags
+	if logConfig.jsonFlag {
+		cfg.OutputFormat = "json"
+	}
+
+	// Handle project listing flags first
+	if cfg.StatsProjects {
+		listProjectFiles()
+		return
+	}
+
+	if cfg.StatsCurrent {
+		listCurrentProjectFiles()
+		return
 	}
 
 	// If --tools was set, set tool filter to show all tools
@@ -130,23 +177,6 @@ func main() {
 		cfg.NoColor = true
 	}
 
-	if cfg.ShowVersion {
-		fmt.Printf("ccl version %s\n", version)
-		return
-	}
-
-	// Handle list projects flag
-	if cfg.ListProjects {
-		listProjectFiles()
-		return
-	}
-
-	// Handle list current flag
-	if cfg.ListCurrent {
-		listCurrentProjectFiles()
-		return
-	}
-
 	// Fetch pricing data if cost flag is set
 	if cfg.ShowCost && cfg.OutputFormat == "text" {
 		if err := fetchModelPricing(); err != nil {
@@ -157,7 +187,7 @@ func main() {
 	}
 
 	// Get input reader
-	reader, cleanup, err := getInputReader()
+	reader, cleanup, err := getInputReaderForLog(logCmd)
 	if cleanup != nil {
 		defer cleanup()
 	}
@@ -172,8 +202,51 @@ func main() {
 	}
 }
 
-// Get input source
-func getInputReader() (io.Reader, func(), error) {
+// runStatusCommand runs the status subcommand
+func runStatusCommand(args []string) {
+	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
+	setupStatusFlags(statusCmd)
+
+	statusCmd.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: ccl status [options] [PROJECT_ID]\n\n")
+		fmt.Fprintf(os.Stderr, "Show project status and information.\n")
+		fmt.Fprintf(os.Stderr, "PROJECT_ID can be a project ID prefix from 'ccl status --all'.\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		statusCmd.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  ccl status -l 3cdee5a    # Output: /path/to/project\n")
+		fmt.Fprintf(os.Stderr, "  cd $(ccl status -l abc)  # Change to project directory\n")
+	}
+
+	if err := statusCmd.Parse(args); err != nil {
+		return
+	}
+
+	// Get remaining arguments (non-flag arguments)
+	remainingArgs := statusCmd.Args()
+	var projectID string
+	if len(remainingArgs) > 0 {
+		projectID = remainingArgs[0]
+	}
+
+	// If -l/--look option is used, projectID is required if no ID provided as argument
+	if cfg.LookDirectory != "" && projectID == "" {
+		projectID = cfg.LookDirectory
+	}
+
+	// Determine which stats command to run
+	if cfg.StatsAll {
+		// Show all projects info
+		cfg.ShowInfoAll = true
+		showProjectInfo("")
+	} else {
+		// Default: show current project info or specified project
+		showProjectInfo(projectID)
+	}
+}
+
+// Get input source for log command
+func getInputReaderForLog(logCmd *flag.FlagSet) (io.Reader, func(), error) {
 	// Check if stdin has data (pipe or redirect)
 	stat, _ := os.Stdin.Stat()
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
@@ -191,8 +264,9 @@ func getInputReader() (io.Reader, func(), error) {
 	}
 
 	// Check for file path from command line argument
-	if flag.NArg() > 0 {
-		file, err := os.Open(flag.Arg(0))
+	args := logCmd.Args()
+	if len(args) > 0 {
+		file, err := os.Open(args[0])
 		if err != nil {
 			return nil, nil, fmt.Errorf("opening file: %w", err)
 		}
@@ -563,6 +637,9 @@ func listProjectFiles() {
 		}
 	}
 
+	// Generate shortened display names
+	shortenProjectNames(projectFiles)
+
 	// Display project files
 	displayProjectFiles(projectFiles)
 }
@@ -611,6 +688,7 @@ func listCurrentProjectFiles() {
 			fullPath := filepath.Join(projectDir, file.Name())
 			projectFiles = append(projectFiles, projectFile{
 				path:    fullPath,
+				decoded: cwd,
 				modTime: info.ModTime(),
 				size:    info.Size(),
 			})
@@ -626,6 +704,9 @@ func listCurrentProjectFiles() {
 		}
 	}
 
+	// Generate shortened display names
+	shortenProjectNames(projectFiles)
+
 	// Display paths
 	displayProjectFiles(projectFiles)
 }
@@ -635,6 +716,7 @@ type projectFile struct {
 	modTime time.Time
 	path    string
 	decoded string
+	display string
 	size    int64
 	current bool
 }
@@ -654,12 +736,13 @@ func displayProjectFilesJSON(projectFiles []projectFile) {
 	for _, pf := range projectFiles {
 		entry := map[string]interface{}{
 			"path": pf.path,
+			"name": pf.display,
 		}
-		if cfg.Verbose {
-			entry["updated_at"] = pf.modTime.Format(time.RFC3339)
-			entry["size"] = pf.size
-			entry["size_human"] = formatFileSize(pf.size)
-		}
+		// Always include basic info
+		entry["updated_at"] = pf.modTime.Format(time.RFC3339)
+		entry["size"] = pf.size
+		entry["size_human"] = formatFileSize(pf.size)
+		entry["decoded_path"] = pf.decoded
 		output = append(output, entry)
 	}
 	jsonData, _ := json.MarshalIndent(output, "", "  ")
@@ -669,14 +752,11 @@ func displayProjectFilesJSON(projectFiles []projectFile) {
 // displayProjectFilesText outputs project files in text format
 func displayProjectFilesText(projectFiles []projectFile) {
 	for _, pf := range projectFiles {
-		if cfg.Verbose {
-			fmt.Printf("%s\t%s\t%s\n",
-				pf.path,
-				pf.modTime.Format("2006-01-02 15:04:05"),
-				formatFileSize(pf.size))
-		} else {
-			fmt.Println(pf.path)
-		}
+		// Simple tab-separated output for cut compatibility
+		fmt.Printf("%s\t%s\t%s\n",
+			pf.path,
+			pf.modTime.Format("2006-01-02 15:04:05"),
+			formatFileSize(pf.size))
 	}
 }
 
@@ -698,8 +778,89 @@ func formatFileSize(bytes int64) string {
 func decodeDirectoryPath(encoded string) string {
 	// This is a simple approximation - we can't perfectly reverse it
 	// but we can make it more readable
-	decoded := strings.ReplaceAll(encoded, "-", "/")
+
+	// For common patterns, try to reconstruct the original path
+	// Example: -Users-sixeight--config-claude -> /Users/sixeight/.config/claude
+	decoded := encoded
+
+	// Handle leading slash (paths usually start with /)
+	if strings.HasPrefix(decoded, "-") {
+		decoded = "/" + decoded[1:]
+	}
+
+	// Replace remaining dashes with slashes
+	decoded = strings.ReplaceAll(decoded, "-", "/")
+
+	// Try to fix common patterns like /.config
+	decoded = strings.ReplaceAll(decoded, "//config", "/.config")
+	decoded = strings.ReplaceAll(decoded, "//ssh", "/.ssh")
+	decoded = strings.ReplaceAll(decoded, "//local", "/.local")
+	decoded = strings.ReplaceAll(decoded, "//cache", "/.cache")
+
 	return decoded
+}
+
+// shortenProjectNames takes a list of project files and generates shortened display names
+// It shows only the last directory name, but includes parent directories when there are duplicates
+func shortenProjectNames(projectFiles []projectFile) {
+	// First pass: count occurrences of last directory names
+	lastDirCount := make(map[string]int)
+	lastDirOnly := make([]string, len(projectFiles))
+
+	for i, pf := range projectFiles {
+		parts := strings.Split(pf.decoded, "/")
+		if len(parts) > 0 {
+			lastDir := parts[len(parts)-1]
+			lastDirOnly[i] = lastDir
+			lastDirCount[lastDir]++
+		}
+	}
+
+	// Second pass: generate display names
+	for i, pf := range projectFiles {
+		parts := strings.Split(pf.decoded, "/")
+		if len(parts) == 0 {
+			projectFiles[i].display = pf.decoded
+			continue
+		}
+
+		lastDir := parts[len(parts)-1]
+
+		// If no duplicates, use only the last directory
+		if lastDirCount[lastDir] == 1 {
+			projectFiles[i].display = lastDir
+		} else {
+			// For duplicates, find the minimum number of parent directories needed
+			// to make each path unique within the duplicate set
+			displayName := lastDir
+
+			// Keep adding parent directories until we have a unique display name
+			for j := len(parts) - 2; j >= 0; j-- {
+				displayName = parts[j] + "/" + displayName
+
+				// Check if this display name is unique among all project files
+				isUnique := true
+				for k, otherPF := range projectFiles {
+					if k == i {
+						continue
+					}
+					// Only check against other files with the same last directory
+					if lastDirOnly[k] == lastDir {
+						if strings.HasSuffix(otherPF.decoded, displayName) {
+							isUnique = false
+							break
+						}
+					}
+				}
+
+				if isUnique {
+					break
+				}
+			}
+
+			projectFiles[i].display = displayName
+		}
+	}
 }
 
 // Collect tool use information from assistant messages

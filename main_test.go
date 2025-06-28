@@ -99,6 +99,67 @@ func TestFormatTimestamp(t *testing.T) {
 	}
 }
 
+func TestShortenProjectPaths(t *testing.T) {
+	tests := []struct {
+		name     string
+		projects []projectStat
+		expected []string
+	}{
+		{
+			name: "no duplicates",
+			projects: []projectStat{
+				{path: "/home/user/project1", display: ""},
+				{path: "/home/user/project2", display: ""},
+				{path: "/home/user/work/project3", display: ""},
+			},
+			expected: []string{"project1", "project2", "project3"},
+		},
+		{
+			name: "simple duplicates",
+			projects: []projectStat{
+				{path: "/home/user/claude", display: ""},
+				{path: "/home/user/work/claude", display: ""},
+				{path: "/home/user/personal/project", display: ""},
+			},
+			expected: []string{"user/claude", "work/claude", "project"},
+		},
+		{
+			name: "complex duplicates",
+			projects: []projectStat{
+				{path: "/home/user/projects/claude", display: ""},
+				{path: "/home/user/work/projects/claude", display: ""},
+				{path: "/opt/apps/projects/claude", display: ""},
+			},
+			expected: []string{"user/projects/claude", "work/projects/claude", "apps/projects/claude"},
+		},
+		{
+			name: "mixed cases",
+			projects: []projectStat{
+				{path: "/home/user/anthropic", display: ""},
+				{path: "/home/user/projects/claude", display: ""},
+				{path: "/home/user/practice/claude", display: ""},
+			},
+			expected: []string{"anthropic", "projects/claude", "practice/claude"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Copy to avoid modifying test data
+			projects := make([]projectStat, len(tt.projects))
+			copy(projects, tt.projects)
+
+			shortenProjectPaths(projects)
+
+			for i, project := range projects {
+				if project.display != tt.expected[i] {
+					t.Errorf("project[%d].display = %q; want %q", i, project.display, tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
 // Extract text content from message - used only in tests
 func extractTextContent(message map[string]interface{}) string {
 	// Handle string content directly

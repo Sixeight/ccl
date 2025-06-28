@@ -490,8 +490,8 @@ func displayToolInputString(key, value string) {
 	isPathKey := key == "file_path" || key == "path" || strings.HasSuffix(key, "_path")
 
 	switch {
-	case isPathKey || cfg.Verbose:
-		// Show full content for paths or in verbose mode
+	case isPathKey:
+		// Show full content for paths
 		fmt.Printf("%s\n", value)
 	case len(value) > 100:
 		// Truncate very long strings
@@ -512,32 +512,14 @@ func displayToolInputString(key, value string) {
 
 // Display array values
 func displayToolInputArray(v []interface{}) {
-	if cfg.Verbose {
-		// In verbose mode, show full JSON
-		if data, err := json.MarshalIndent(v, "", "  "); err == nil {
-			fmt.Printf("%s\n", string(data))
-		} else {
-			fmt.Printf("[%d items]\n", len(v))
-		}
-	} else {
-		// For arrays, show count and type
-		fmt.Printf("[%d items]\n", len(v))
-	}
+	// For arrays, show count and type
+	fmt.Printf("[%d items]\n", len(v))
 }
 
 // Display object values
 func displayToolInputObject(v map[string]interface{}) {
-	if cfg.Verbose {
-		// In verbose mode, show full JSON
-		if data, err := json.MarshalIndent(v, "", "  "); err == nil {
-			fmt.Printf("%s\n", string(data))
-		} else {
-			fmt.Printf("{%d keys}\n", len(v))
-		}
-	} else {
-		// For objects, show key count
-		fmt.Printf("{%d keys}\n", len(v))
-	}
+	// For objects, show key count
+	fmt.Printf("{%d keys}\n", len(v))
 }
 
 // Display default/unknown type values
@@ -545,7 +527,7 @@ func displayToolInputDefault(value interface{}) {
 	// For other types, convert to JSON
 	if data, err := json.Marshal(value); err == nil {
 		jsonStr := string(data)
-		if cfg.Verbose || len(jsonStr) <= 100 {
+		if len(jsonStr) <= 100 {
 			fmt.Printf("%s\n", jsonStr)
 		} else {
 			fmt.Printf("%s\n", truncateRunes(jsonStr, 80))
@@ -560,13 +542,8 @@ func displayToolResultString(content, indent string) bool {
 	if content == "" {
 		return false
 	}
-	if cfg.Verbose {
-		// In verbose mode, show all content
-		displayText(content, indent)
-	} else {
-		// In normal mode, show first 10 lines with truncation notice
-		displayTextTruncated(content, indent, 10)
-	}
+	// Show first 10 lines with truncation notice
+	displayTextTruncated(content, indent, 10)
 	return true
 }
 
@@ -578,11 +555,7 @@ func displayToolResultArray(content []interface{}, indent string) bool {
 			if m["type"] == "text" {
 				if text, ok := m["text"].(string); ok && text != "" {
 					hasContent = true
-					if cfg.Verbose {
-						displayText(text, indent)
-					} else {
-						displayTextTruncated(text, indent, 10)
-					}
+					displayTextTruncated(text, indent, 10)
 				}
 			}
 		}
@@ -654,36 +627,6 @@ func displayTodoItem(todo map[string]interface{}, indent string) {
 	fmt.Println()
 }
 
-// Display todo changes
-func displayTodoChanges(newTodos, oldTodos []interface{}, indent string) {
-	// Build old status map
-	oldMap := make(map[string]string)
-	for _, oldItem := range oldTodos {
-		if old, ok := oldItem.(map[string]interface{}); ok {
-			if id, ok := old["id"].(string); ok {
-				if status, ok := old["status"].(string); ok {
-					oldMap[id] = status
-				}
-			}
-		}
-	}
-
-	// Show status changes
-	fmt.Printf("%s%sChanges:%s\n", indent, color(colorGray), colorReset)
-	for _, newItem := range newTodos {
-		if newTodo, ok := newItem.(map[string]interface{}); ok {
-			if id, ok := newTodo["id"].(string); ok {
-				if newStatus, ok := newTodo["status"].(string); ok {
-					if oldStatus, exists := oldMap[id]; exists && oldStatus != newStatus {
-						content, _ := newTodo["content"].(string)
-						fmt.Printf("%s  %s: %s → %s\n", indent, content, oldStatus, newStatus)
-					}
-				}
-			}
-		}
-	}
-}
-
 // Display TodoWrite result with structured data
 func displayTodoWriteResultWithData(result map[string]interface{}, indent string, toolUseResult map[string]interface{}) {
 	// Check for newTodos in the result
@@ -695,12 +638,7 @@ func displayTodoWriteResultWithData(result map[string]interface{}, indent string
 			}
 		}
 
-		// Show changes in verbose mode
-		if cfg.Verbose {
-			if oldTodos, ok := toolUseResult["oldTodos"].([]interface{}); ok {
-				displayTodoChanges(newTodos, oldTodos, indent)
-			}
-		}
+		// Changes are no longer shown since verbose mode is removed
 	} else {
 		// Fallback to content display if no structured data
 		if content, ok := result["content"].(string); ok && content != "" {

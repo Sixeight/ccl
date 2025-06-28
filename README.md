@@ -18,14 +18,13 @@ ccl project.jsonl
 tail -f project.jsonl | ccl
 ```
 
-## Key Features
+## Features
 
-- **Auto-detection** - Finds project files for your current directory automatically
-- **Smart filtering** - Filter by role (user/assistant/tool) or specific tools with glob patterns
-- **Real-time streaming** - Watch conversations as they happen
-- **Multiple formats** - Text (colored), JSON, or compact output
-- **Cost tracking** - Optional token usage and pricing information
-- **Project discovery** - List and access all Claude Code project files easily
+- Auto-detect project files for current directory
+- Filter by role or tool with glob patterns
+- Stream conversations in real-time
+- Output as colored text or JSON
+- Navigate to project directories quickly
 
 ## Common Usage
 
@@ -51,87 +50,37 @@ ccl --role assistant --tool "mcp__*"  # MCP tools used by assistant
 ### Output Options
 
 ```bash
-ccl --compact    # Minimal output, no tool details
-ccl --no-color   # Plain text without colors
-ccl --json       # Original JSON format for piping
-ccl --cost       # Include token costs
-ccl -f           # Follow mode (like tail -f)
-ccl -v           # Verbose output with tool details
+ccl --compact    # Minimal output
+ccl --json       # JSON format
+ccl -f           # Follow mode
 ```
 
-### Project Management
+### Project Files
 
 ```bash
-# List all project files
-ccl --list-projects
-ccl -ls
+# List all projects
+ccl log --projects
 
-# List current directory's project files
-ccl --list-current
-ccl -lc
+# List current directory's projects
+ccl log --current  
 
-# Verbose listing with timestamps and sizes
-ccl -v -ls
-ccl -v -lc
-
-# Open most recent project
-ccl -ls | head -1 | xargs ccl
-
-# Search and open specific project
-ccl -ls | grep "myproject" | xargs ccl
-
-# Get project info as JSON
-ccl --json -v -ls | jq '.[0]'
+# Open specific project
+ccl log --projects | grep "myproject" | cut -f1 | xargs ccl
 ```
 
-### Advanced Queries
+
+### Project Navigation
 
 ```bash
-# Find errors in Bash commands
-ccl --tool Bash --json | jq 'select(.content.output | contains("error"))'
+# Show project status
+ccl status
+ccl status --all      # All projects with IDs
+ccl status abc123     # Specific project
 
-# Extract specific date range
-ccl --json | jq 'select(.timestamp >= "2024-01-01")'
-
-# Count messages by type
-ccl --json | jq -s 'group_by(.type) | map({type: .[0].type, count: length})'
-
-# Find largest project files
-ccl --json -v -ls | jq 'sort_by(.size) | reverse | .[0:5]'
+# Jump to project directory  
+cd $(ccl status -l abc123)
 ```
 
-## Example Output
-
-```
-[06:01:35] USER
-  Help me create a CLI tool to view Claude Code logs.
-
-[06:01:40] ASSISTANT (claude-opus-4-20250514)
-  I'll help you create that tool. Let me start by examining the project structure.
-
-[06:01:47] ASSISTANT (claude-opus-4-20250514)
-  → Tool: Bash
-  Input:
-    command: ls -la
-  
-[06:01:48] TOOL (result for: toolu_01)
-  ← Tool Result (toolu_01) [success]
-    total 16
-    drwxr-xr-x  4 user  staff   128 Jan 15 10:00 .
-    drwxr-xr-x  5 user  staff   160 Jan 15 09:00 ..
-    -rw-r--r--  1 user  staff  1024 Jan 15 10:00 main.go
-    -rw-r--r--  1 user  staff   512 Jan 15 10:00 go.mod
-```
-
-## Configuration
-
-ccl looks for project files in the Claude configuration directory:
-
-1. `$CLAUDE_CONFIG_DIR` (if set)
-2. `$XDG_CONFIG_HOME/claude` (if XDG_CONFIG_HOME is set)
-3. `~/.claude` (default)
-
-Project files are stored as: `[config-dir]/projects/[encoded-path]/[UUID].jsonl`
 
 ## Development
 
