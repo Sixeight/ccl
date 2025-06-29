@@ -77,19 +77,25 @@ func findProjectFile() string {
 			continue
 		}
 
-		// Find the most recent JSONL file
+		// Find the most recent non-empty JSONL file
 		var newestFile string
 		var newestTime int64
 		for _, file := range files {
-			if !file.IsDir() && strings.HasSuffix(file.Name(), ".jsonl") {
-				info, err := file.Info()
-				if err != nil {
-					continue
-				}
-				if info.ModTime().Unix() > newestTime {
-					newestTime = info.ModTime().Unix()
-					newestFile = filepath.Join(projectDir, file.Name())
-				}
+			if file.IsDir() || !strings.HasSuffix(file.Name(), ".jsonl") {
+				continue
+			}
+			info, err := file.Info()
+			if err != nil {
+				continue
+			}
+			fullPath := filepath.Join(projectDir, file.Name())
+			// Skip empty project files
+			if isEmptyProjectFile(fullPath) {
+				continue
+			}
+			if info.ModTime().Unix() > newestTime {
+				newestTime = info.ModTime().Unix()
+				newestFile = fullPath
 			}
 		}
 
@@ -136,12 +142,52 @@ func decodeDirectoryPath(encoded string) string {
 	return decoded
 }
 
+// isEmptyProjectFile checks if a project file contains no user/assistant messages
+func isEmptyProjectFile(path string) bool {
+	file, err := os.Open(path)
+	if err != nil {
+		return true // If we can't open it, treat as empty
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	for {
+		var entry map[string]interface{}
+		if err := decoder.Decode(&entry); err != nil {
+			break
+		}
+		// Check if this entry is a user or assistant message
+		if entryType, ok := entry["type"].(string); ok && (entryType == "user" || entryType == "assistant") {
+			return false // Found a message, not empty
+		}
+	}
+	return true // No messages found
+}
+
 // listProjectFiles finds and displays all available project files
 func listProjectFiles() {
+	projectFiles := collectAllProjectFiles()
+	if len(projectFiles) == 0 {
+		fmt.Println("No project files found")
+		return
+	}
+
+	// Sort by modification time (most recent first)
+	sortProjectFilesByModTime(projectFiles)
+
+	// Generate shortened display names
+	shortenProjectNames(projectFiles)
+
+	// Display project files
+	displayProjectFiles(projectFiles)
+}
+
+// collectAllProjectFiles collects all project files from all project directories
+func collectAllProjectFiles() []projectFile {
 	configDir := getClaudeConfigDir()
 	if configDir == "" {
 		fmt.Fprintf(os.Stderr, "Error: Could not determine Claude config directory\n")
-		return
+		return nil
 	}
 
 	projectsDir := filepath.Join(configDir, "projects")
@@ -152,7 +198,7 @@ func listProjectFiles() {
 		} else {
 			fmt.Fprintf(os.Stderr, "Error reading projects directory: %v\n", err)
 		}
-		return
+		return nil
 	}
 
 	var projectFiles []projectFile
@@ -168,40 +214,53 @@ func listProjectFiles() {
 		}
 
 		projectDir := filepath.Join(projectsDir, entry.Name())
-		files, err := os.ReadDir(projectDir)
+		files := collectProjectFilesFromDir(projectDir, entry.Name(), currentEncoded)
+		projectFiles = append(projectFiles, files...)
+	}
+
+	return projectFiles
+}
+
+// collectProjectFilesFromDir collects JSONL files from a single project directory
+func collectProjectFilesFromDir(projectDir, encodedName, currentEncoded string) []projectFile {
+	files, err := os.ReadDir(projectDir)
+	if err != nil {
+		return nil
+	}
+
+	projectFiles := make([]projectFile, 0, len(files))
+	decoded := decodeDirectoryPath(encodedName)
+
+	// Look for JSONL files
+	for _, file := range files {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".jsonl") {
+			continue
+		}
+		info, err := file.Info()
 		if err != nil {
 			continue
 		}
 
-		// Look for JSONL files
-		for _, file := range files {
-			if file.IsDir() || !strings.HasSuffix(file.Name(), ".jsonl") {
-				continue
-			}
-			info, err := file.Info()
-			if err != nil {
-				continue
-			}
-
-			fullPath := filepath.Join(projectDir, file.Name())
-			decoded := decodeDirectoryPath(entry.Name())
-
-			projectFiles = append(projectFiles, projectFile{
-				path:    fullPath,
-				decoded: decoded,
-				modTime: info.ModTime(),
-				size:    info.Size(),
-				current: entry.Name() == currentEncoded,
-			})
+		fullPath := filepath.Join(projectDir, file.Name())
+		// Skip empty project files
+		if isEmptyProjectFile(fullPath) {
+			continue
 		}
+
+		projectFiles = append(projectFiles, projectFile{
+			path:    fullPath,
+			decoded: decoded,
+			modTime: info.ModTime(),
+			size:    info.Size(),
+			current: encodedName == currentEncoded,
+		})
 	}
 
-	if len(projectFiles) == 0 {
-		fmt.Println("No project files found")
-		return
-	}
+	return projectFiles
+}
 
-	// Sort by modification time (most recent first)
+// sortProjectFilesByModTime sorts project files by modification time (most recent first)
+func sortProjectFilesByModTime(projectFiles []projectFile) {
 	for i := 0; i < len(projectFiles); i++ {
 		for j := i + 1; j < len(projectFiles); j++ {
 			if projectFiles[j].modTime.After(projectFiles[i].modTime) {
@@ -209,12 +268,6 @@ func listProjectFiles() {
 			}
 		}
 	}
-
-	// Generate shortened display names
-	shortenProjectNames(projectFiles)
-
-	// Display project files
-	displayProjectFiles(projectFiles)
 }
 
 // listCurrentProjectFiles finds and displays project files for current directory only
@@ -249,33 +302,32 @@ func listCurrentProjectFiles() {
 	}
 
 	// Collect JSONL files
-	var projectFiles []projectFile
+	projectFiles := make([]projectFile, 0, len(files))
 
 	for _, file := range files {
-		if !file.IsDir() && strings.HasSuffix(file.Name(), ".jsonl") {
-			info, err := file.Info()
-			if err != nil {
-				continue
-			}
-
-			fullPath := filepath.Join(projectDir, file.Name())
-			projectFiles = append(projectFiles, projectFile{
-				path:    fullPath,
-				decoded: cwd,
-				modTime: info.ModTime(),
-				size:    info.Size(),
-			})
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".jsonl") {
+			continue
 		}
+		info, err := file.Info()
+		if err != nil {
+			continue
+		}
+
+		fullPath := filepath.Join(projectDir, file.Name())
+		// Skip empty project files
+		if isEmptyProjectFile(fullPath) {
+			continue
+		}
+		projectFiles = append(projectFiles, projectFile{
+			path:    fullPath,
+			decoded: cwd,
+			modTime: info.ModTime(),
+			size:    info.Size(),
+		})
 	}
 
 	// Sort by modification time (most recent first)
-	for i := 0; i < len(projectFiles); i++ {
-		for j := i + 1; j < len(projectFiles); j++ {
-			if projectFiles[j].modTime.After(projectFiles[i].modTime) {
-				projectFiles[i], projectFiles[j] = projectFiles[j], projectFiles[i]
-			}
-		}
-	}
+	sortProjectFilesByModTime(projectFiles)
 
 	// Generate shortened display names
 	shortenProjectNames(projectFiles)
