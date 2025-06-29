@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -109,13 +110,18 @@ func getMessageSummary(message map[string]interface{}) string {
 			if name, ok := item["name"].(string); ok {
 				toolSummary := fmt.Sprintf("[Tool: %s]", name)
 				// For Bash tool, include the command
-				if name == "Bash" {
-					if input, ok := item["input"].(map[string]interface{}); ok {
+				if input, ok := item["input"].(map[string]interface{}); ok {
+					if name == "Bash" {
 						if cmd, ok := input["command"].(string); ok {
 							// Remove newlines and truncate command
 							cmd = strings.ReplaceAll(cmd, "\n", " ")
 							cmd = truncateRunes(strings.TrimSpace(cmd), 40)
 							toolSummary = fmt.Sprintf("[Tool: Bash] %s", cmd)
+						}
+					} else {
+						// Check for file_path in other tools
+						if filePath, ok := input["file_path"].(string); ok {
+							toolSummary = fmt.Sprintf("[Tool: %s] %s", name, filePath)
 						}
 					}
 				}
@@ -200,7 +206,7 @@ func displayUserMessage(entry map[string]interface{}, timeStr, versionStr string
 	if isToolResult {
 		// Display as TOOL message
 		toolUseResult, _ := entry["toolUseResult"].(map[string]interface{})
-		displayToolResult(message, timeStr, versionStr, toolUseMap, toolInputMap, toolUseResult)
+		displayToolResultSimple(message, timeStr, versionStr, toolUseMap, toolInputMap, toolUseResult)
 	} else {
 		// Check if this is a slash command
 		isSlashCommand := false
@@ -218,27 +224,30 @@ func displayUserMessage(entry map[string]interface{}, timeStr, versionStr string
 		}
 
 		// Display as regular USER message
-		fmt.Printf("%s[%s]%s %sUSER%s",
-			color(colorGray), timeStr, versionStr,
-			color(colorBlue+colorBold), colorReset)
-
-		// Add [COMMAND] label for slash commands
-		if isSlashCommand {
-			fmt.Printf(" %s[COMMAND]%s", color(colorPurple), colorReset)
-		}
-
-		// Display content
 		if !cfg.Compact {
+			fmt.Printf("%s[%s]%s %sUSER%s",
+				color(colorGray), timeStr, versionStr,
+				color(colorBlue+colorBold), colorReset)
+
+			// Add [COMMAND] label for slash commands
+			if isSlashCommand {
+				fmt.Printf(" %s[COMMAND]%s", color(colorPurple), colorReset)
+			}
+
 			fmt.Println()
 			displayMessageContent(message, "  ")
 			fmt.Println()
 		} else {
-			// Show brief summary in compact mode
+			// Compact mode: fixed width role display
+			fmt.Printf("%s[%s]%s %s%-9s%s - ",
+				color(colorGray), timeStr, colorReset,
+				color(colorBlue+colorBold), "USER", colorReset)
+
 			summary := getMessageSummary(message)
 			if summary != "" {
-				fmt.Printf(" - %s\n", summary)
+				fmt.Printf("%s\n", summary)
 			} else {
-				fmt.Println()
+				fmt.Printf("\n")
 			}
 		}
 	}
@@ -252,117 +261,439 @@ func displayAssistantMessage(entry map[string]interface{}, timeStr, versionStr s
 	}
 
 	// Display header
-	fmt.Printf("%s[%s]%s %sASSISTANT%s",
-		color(colorGray), timeStr, versionStr,
-		color(colorGreen+colorBold), colorReset)
+	if !cfg.Compact {
+		fmt.Printf("%s[%s]%s %sASSISTANT%s",
+			color(colorGray), timeStr, versionStr,
+			color(colorGreen+colorBold), colorReset)
 
-	// Check for model info
-	if model, ok := message["model"].(string); ok {
-		fmt.Printf(" %s(%s)%s", color(colorGray), model, colorReset)
-	}
+		// Check for model info
+		if model, ok := message["model"].(string); ok {
+			fmt.Printf(" %s(%s)%s", color(colorGray), model, colorReset)
+		}
 
-	// Display usage info if available
-	if usage, ok := message["usage"].(map[string]interface{}); ok {
-		// Always show brief token info
-		if inputTokens, ok := getTokenCount(usage, "input_tokens"); ok {
-			if outputTokens, ok := getTokenCount(usage, "output_tokens"); ok {
-				fmt.Printf(" [↑%d ↓%d", inputTokens, outputTokens)
+		// Display usage info if available
+		if usage, ok := message["usage"].(map[string]interface{}); ok {
+			// Always show brief token info
+			if inputTokens, ok := getTokenCount(usage, "input_tokens"); ok {
+				if outputTokens, ok := getTokenCount(usage, "output_tokens"); ok {
+					fmt.Printf(" [↑%d ↓%d", inputTokens, outputTokens)
 
-				// Show cache info if available
-				if cacheRead, ok := getTokenCount(usage, "cache_read_input_tokens"); ok && cacheRead > 0 {
-					fmt.Printf(" *%d", cacheRead)
-				}
-				if cacheCreate, ok := getTokenCount(usage, "cache_creation_input_tokens"); ok && cacheCreate > 0 {
-					fmt.Printf(" +%d", cacheCreate)
-				}
-
-				// Calculate and show cost if requested
-				if cfg.ShowCost {
-					modelName := ""
-					if model, ok := message["model"].(string); ok {
-						modelName = model
+					// Show cache info if available
+					if cacheRead, ok := getTokenCount(usage, "cache_read_input_tokens"); ok && cacheRead > 0 {
+						fmt.Printf(" *%d", cacheRead)
 					}
-					cost := calculateCost(usage, modelName)
-					if cost > 0 {
-						fmt.Printf(" $%.4f", cost)
+					if cacheCreate, ok := getTokenCount(usage, "cache_creation_input_tokens"); ok && cacheCreate > 0 {
+						fmt.Printf(" +%d", cacheCreate)
 					}
+
+					// Calculate and show cost if requested
+					if cfg.ShowCost {
+						modelName := ""
+						if model, ok := message["model"].(string); ok {
+							modelName = model
+						}
+						cost := calculateCost(usage, modelName)
+						if cost > 0 {
+							fmt.Printf(" $%.4f", cost)
+						}
+					}
+					fmt.Printf("]")
 				}
-				fmt.Printf("]")
 			}
 		}
-	}
 
-	// Display content
-	if !cfg.Compact {
 		fmt.Println()
 		displayMessageContent(message, "  ")
 		fmt.Println()
 	} else {
-		// Show brief summary in compact mode on same line
+		// Compact mode: fixed width role display, no metadata
+		fmt.Printf("%s[%s]%s %s%-9s%s - ",
+			color(colorGray), timeStr, colorReset,
+			color(colorGreen+colorBold), "ASSISTANT", colorReset)
+
+		// Show brief summary in compact mode
 		summary := getMessageSummary(message)
 		if summary != "" {
-			fmt.Printf(" - %s\n", summary)
+			fmt.Printf("%s\n", summary)
 		} else {
-			fmt.Println()
+			fmt.Printf("\n")
 		}
 	}
 }
 
 // Display tool result from user message
-func displayToolResult(message map[string]interface{}, timeStr, versionStr string, toolUseMap map[string]string, toolInputMap map[string]map[string]interface{}, toolUseResult map[string]interface{}) {
-	// Display header
-	fmt.Printf("%s[%s]%s %sTOOL%s",
-		color(colorGray), timeStr, versionStr,
-		color(colorCyan+colorBold), colorReset)
 
-	// Try to get tool name from tool_result content
+// Get tool name from tool result content
+func getToolNameFromResult(message map[string]interface{}, toolUseMap map[string]string) string {
 	contents := extractContent(message)
-	toolName := ""
 	for _, content := range contents {
 		if content["type"] == "tool_result" {
 			if id, ok := content["tool_use_id"].(string); ok {
 				if name, exists := toolUseMap[id]; exists {
-					toolName = name
-					fmt.Printf(" %s(%s)%s", color(colorGray), toolName, colorReset)
-
+					return name
 				}
 			}
 			break
 		}
 	}
+	return ""
+}
 
-	// Get tool input data for this tool use
-	var toolInput map[string]interface{}
+// Get tool input for tool result
+func getToolInputForResult(message map[string]interface{}, toolInputMap map[string]map[string]interface{}) map[string]interface{} {
+	contents := extractContent(message)
 	for _, content := range contents {
 		if content["type"] == "tool_result" {
 			if id, ok := content["tool_use_id"].(string); ok {
 				if input, exists := toolInputMap[id]; exists {
-					toolInput = input
+					return input
 				}
 			}
 			break
 		}
 	}
+	return nil
+}
 
-	// Display content
+// Extract tool result info from contents
+func extractToolResult(contents []map[string]interface{}) (isError bool, resultContent string) {
+	for _, content := range contents {
+		if content["type"] == "tool_result" {
+			if err, ok := content["is_error"].(bool); ok {
+				isError = err
+			}
+			if contentStr, ok := content["content"].(string); ok {
+				resultContent = contentStr
+			}
+			return
+		}
+	}
+	return
+}
+
+// Display error or OK status
+func displayCompactStatus(isError bool) {
+	if isError {
+		fmt.Printf("[ERROR]")
+	} else {
+		fmt.Printf("[OK]")
+	}
+}
+
+// Display tool result in compact mode
+func displayToolResultCompact(message map[string]interface{}, toolName string, toolInput map[string]interface{}) {
+	contents := extractContent(message)
+
+	// Route to specific handlers
+	switch {
+	case toolName == "TodoWrite" && toolInput != nil:
+		displayTodoWriteResultCompact(contents, toolInput)
+	case toolName == "Bash" && toolInput != nil:
+		displayBashResultCompact(contents, toolInput)
+	case isFileOperationTool(toolName):
+		displayFileToolResultCompact(contents, toolName, toolInput)
+	case toolName == "WebFetch" || toolName == "WebSearch":
+		displayWebToolResultCompact(contents, toolName, toolInput)
+	case strings.HasPrefix(toolName, "mcp__"):
+		displayMCPToolResultCompact(contents, toolName, toolInput)
+	default:
+		displayDefaultToolResultCompact(contents)
+	}
+}
+
+// Check if tool is a file operation tool
+func isFileOperationTool(toolName string) bool {
+	switch toolName {
+	case "Read", "Grep", "Glob", "Write", "Edit", "MultiEdit":
+		return true
+	}
+	return false
+}
+
+// Display default tool result in compact mode
+func displayDefaultToolResultCompact(contents []map[string]interface{}) {
+	isError, _ := extractToolResult(contents)
+	displayCompactStatus(isError)
+	fmt.Println()
+}
+
+// Display TodoWrite result in compact mode with special handling
+func displayTodoWriteResultCompact(contents []map[string]interface{}, toolInput map[string]interface{}) {
+	isError, _ := extractToolResult(contents)
+	displayCompactStatus(isError)
+	fmt.Printf(" ")
+	displayTodoWriteCompact(toolInput)
+	fmt.Println()
+}
+
+// Display Bash result in compact mode
+func displayBashResultCompact(contents []map[string]interface{}, toolInput map[string]interface{}) {
+	isError, resultContent := extractToolResult(contents)
+
+	// Try to extract exit code from the output
+	exitCode := extractExitCode(resultContent)
+
+	// Display status with exit code
+	displayCompactStatus(isError)
+
+	if exitCode >= 0 {
+		fmt.Printf(" exit %d", exitCode)
+	}
+
+	// Display first line of output if available
+	if resultContent != "" {
+		lines := strings.Split(resultContent, "\n")
+		if len(lines) > 0 && lines[0] != "" {
+			firstLine := strings.TrimSpace(lines[0])
+			if firstLine != "" {
+				fmt.Printf(": %s", truncateRunes(firstLine, 50))
+			}
+		}
+	}
+
+	fmt.Println()
+}
+
+// Extract exit code from bash output (looks for common patterns)
+func extractExitCode(output string) int {
+	// Look for patterns like "exit status 1" or "exit code: 1"
+	if strings.Contains(output, "exit status ") {
+		parts := strings.Split(output, "exit status ")
+		if len(parts) > 1 {
+			codeStr := strings.Fields(parts[1])[0]
+			if code, err := strconv.Atoi(codeStr); err == nil {
+				return code
+			}
+		}
+	}
+
+	// If error output is empty, it usually means success
+	if output == "" {
+		return 0
+	}
+
+	return -1 // Unknown
+}
+
+// Display file operation tool results in compact mode
+func displayFileToolResultCompact(contents []map[string]interface{}, toolName string, toolInput map[string]interface{}) {
+	isError, resultContent := extractToolResult(contents)
+	displayCompactStatus(isError)
+
+	if !isError {
+		displayFileToolInfo(toolName, resultContent, toolInput)
+	}
+
+	fmt.Println()
+}
+
+// Display file tool specific info
+func displayFileToolInfo(toolName, resultContent string, toolInput map[string]interface{}) {
+	switch toolName {
+	case "Read":
+		if resultContent != "" {
+			lines := strings.Split(resultContent, "\n")
+			fmt.Printf(" %d lines", len(lines))
+		}
+	case "Grep", "Glob":
+		displayCountInfo(toolName, resultContent)
+	case "Write":
+		fmt.Printf(" file created")
+	case "Edit":
+		fmt.Printf(" file updated")
+	case "MultiEdit":
+		if edits, ok := toolInput["edits"].([]interface{}); ok {
+			fmt.Printf(" %d edits applied", len(edits))
+		}
+	}
+}
+
+// Display count info for Grep and Glob
+func displayCountInfo(toolName, resultContent string) {
+	lines := strings.Split(strings.TrimSpace(resultContent), "\n")
+	if lines[0] != "" {
+		if toolName == "Grep" {
+			fmt.Printf(" %d matches", len(lines))
+		} else {
+			fmt.Printf(" %d files found", len(lines))
+		}
+	}
+}
+
+// Display web tool results in compact mode
+func displayWebToolResultCompact(contents []map[string]interface{}, toolName string, toolInput map[string]interface{}) {
+	isError, resultContent := extractToolResult(contents)
+	displayCompactStatus(isError)
+
+	// Display tool-specific info
+	switch toolName {
+	case "WebFetch":
+		if !isError && resultContent != "" {
+			// Extract first meaningful line
+			lines := strings.Split(resultContent, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line != "" {
+					fmt.Printf(" %s", truncateRunes(line, 50))
+					break
+				}
+			}
+		}
+	case "WebSearch":
+		if !isError && resultContent != "" {
+			// Count search results
+			resultCount := strings.Count(resultContent, "<search_result>")
+			if resultCount > 0 {
+				fmt.Printf(" %d results", resultCount)
+			}
+		}
+	}
+
+	fmt.Println()
+}
+
+// Display MCP tool results in compact mode
+func displayMCPToolResultCompact(contents []map[string]interface{}, toolName string, toolInput map[string]interface{}) {
+	isError, resultContent := extractToolResult(contents)
+	displayCompactStatus(isError)
+
+	if !isError && resultContent != "" {
+		displayMCPToolInfo(toolName, resultContent)
+	}
+
+	fmt.Println()
+}
+
+// Display MCP tool specific info
+func displayMCPToolInfo(toolName, resultContent string) {
+	parts := strings.Split(toolName, "__")
+	if len(parts) <= 1 {
+		return
+	}
+
+	action := parts[len(parts)-1]
+
+	switch {
+	case strings.HasPrefix(action, "create_"):
+		displayMCPCreateInfo(resultContent)
+	case strings.HasPrefix(action, "list_"):
+		displayMCPListInfo(resultContent)
+	case strings.HasPrefix(action, "get_"):
+		displayMCPGetInfo(resultContent)
+	}
+}
+
+// Display info for MCP create actions
+func displayMCPCreateInfo(resultContent string) {
+	if match := extractJSONValue(resultContent, "id"); match != "" {
+		fmt.Printf(" Created: %s", match)
+	} else if match := extractJSONValue(resultContent, "title"); match != "" {
+		fmt.Printf(" Created: %s", truncateRunes(match, 30))
+	}
+}
+
+// Display info for MCP list actions
+func displayMCPListInfo(resultContent string) {
+	if count := countJSONArrayItems(resultContent); count > 0 {
+		fmt.Printf(" Found %d items", count)
+	}
+}
+
+// Display info for MCP get actions
+func displayMCPGetInfo(resultContent string) {
+	if match := extractJSONValue(resultContent, "title"); match != "" {
+		fmt.Printf(" %s", truncateRunes(match, 40))
+	} else if match := extractJSONValue(resultContent, "name"); match != "" {
+		fmt.Printf(" %s", truncateRunes(match, 40))
+	}
+}
+
+// Extract a simple value from JSON-like content
+func extractJSONValue(content, key string) string {
+	// Simple pattern matching for common JSON patterns
+	if idx := strings.Index(content, fmt.Sprintf("%q", key)); idx >= 0 {
+		// Find the value after the key
+		substr := content[idx:]
+		if valueStart := strings.Index(substr, `:"`); valueStart >= 0 {
+			valueStart += 2
+			valueEnd := strings.Index(substr[valueStart:], `"`)
+			if valueEnd >= 0 {
+				return substr[valueStart : valueStart+valueEnd]
+			}
+		}
+	}
+	return ""
+}
+
+// Count items in JSON arrays
+func countJSONArrayItems(content string) int {
+	// Count occurrences of common item patterns
+	count := 0
+
+	// Try to count by looking for repeated patterns
+	if strings.Contains(content, "[{") {
+		// Count objects in arrays
+		count = strings.Count(content, "},{") + 1
+	} else if strings.Contains(content, `"id":`) {
+		// Count by ID fields
+		count = strings.Count(content, `"id":`)
+	}
+
+	return count
+}
+
+// Display TodoWrite in compact mode
+func displayTodoWriteCompact(toolInput map[string]interface{}) {
+	if todos, ok := toolInput["todos"].([]interface{}); ok && len(todos) > 0 {
+		// Find the in_progress or most recently changed todo
+		var focusedTodo map[string]interface{}
+		for _, todoItem := range todos {
+			if todo, ok := todoItem.(map[string]interface{}); ok {
+				if status, ok := todo["status"].(string); ok && status == "in_progress" {
+					focusedTodo = todo
+					break
+				}
+				// If no in_progress, use the first todo
+				if focusedTodo == nil {
+					focusedTodo = todo
+				}
+			}
+		}
+		if focusedTodo != nil {
+			if content, ok := focusedTodo["content"].(string); ok {
+				status, _ := focusedTodo["status"].(string)
+				statusIcon, statusColor := getTodoStatusIcon(status)
+				fmt.Printf("%s%s%s %s", color(statusColor), statusIcon, colorReset, truncateRunes(content, 50))
+			}
+		}
+	}
+}
+
+// Display tool result from user message (simplified version)
+func displayToolResultSimple(message map[string]interface{}, timeStr, versionStr string, toolUseMap map[string]string, toolInputMap map[string]map[string]interface{}, toolUseResult map[string]interface{}) {
+	// Get tool name and input
+	toolName := getToolNameFromResult(message, toolUseMap)
+	toolInput := getToolInputForResult(message, toolInputMap)
+
+	// Display header
 	if !cfg.Compact {
+		fmt.Printf("%s[%s]%s %sTOOL%s",
+			color(colorGray), timeStr, versionStr,
+			color(colorCyan+colorBold), colorReset)
+		if toolName != "" {
+			fmt.Printf(" %s(%s)%s", color(colorGray), toolName, colorReset)
+		}
 		fmt.Println()
 		displayMessageContentFull(message, "  ", toolName, toolUseResult, toolInput)
 		fmt.Println()
-	} else {
-		// Show brief status in compact mode
-		for _, content := range contents {
-			if content["type"] == "tool_result" {
-				if isError, ok := content["is_error"].(bool); ok && isError {
-					fmt.Printf(" - [ERROR]\n")
-				} else {
-					fmt.Printf(" - [OK]\n")
-				}
-				return
-			}
-		}
-		fmt.Println()
+		return
 	}
+
+	// Compact mode
+	fmt.Printf("%s[%s]%s %s%-9s%s - ",
+		color(colorGray), timeStr, colorReset,
+		color(colorCyan+colorBold), "TOOL", colorReset)
+	displayToolResultCompact(message, toolName, toolInput)
 }
 
 // Display message content
