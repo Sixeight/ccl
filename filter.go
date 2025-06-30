@@ -43,11 +43,10 @@ func shouldDisplayEntry(msgType string, entry map[string]interface{}) bool {
 func shouldDisplayEntryWithToolInfo(msgType string, entry map[string]interface{}, toolUseMap map[string]string) bool {
 	// Check if tool filters are specified
 	toolFilterList := parseCommaSeparated(cfg.ToolFilter)
-	toolExcludeList := parseCommaSeparated(cfg.ToolExclude)
-	hasToolFilters := len(toolFilterList) > 0 || len(toolExcludeList) > 0
+	hasToolIncludeFilters := len(toolFilterList) > 0
 
-	// If tool filters are specified, prioritize tool-based filtering
-	if hasToolFilters {
+	// If tool include filters are specified, prioritize tool-based filtering
+	if hasToolIncludeFilters {
 		switch msgType {
 		case "user":
 			return shouldDisplayUserWithToolResult(entry, toolUseMap)
@@ -89,7 +88,6 @@ func shouldDisplayEntryWithToolInfo(msgType string, entry map[string]interface{}
 // Check if a tool result should be displayed
 func shouldDisplayToolResult(entry map[string]interface{}, toolUseMap map[string]string) bool {
 	toolFilterList := parseCommaSeparated(cfg.ToolFilter)
-	toolExcludeList := parseCommaSeparated(cfg.ToolExclude)
 
 	// Get tool name from parent message ID
 	parentID, _ := entry["parentMessageId"].(string)
@@ -105,7 +103,12 @@ func shouldDisplayToolResult(entry map[string]interface{}, toolUseMap map[string
 		return true
 	}
 
-	return applyToolFilters(toolName, toolFilterList, toolExcludeList)
+	// If no tool include filters, show by default (but still apply exclude filters)
+	if len(toolFilterList) == 0 {
+		return !isToolExcluded(toolName, parseCommaSeparated(cfg.ToolExclude))
+	}
+
+	return applyToolFilters(toolName, toolFilterList, parseCommaSeparated(cfg.ToolExclude))
 }
 
 // Get tool name from content item
@@ -160,8 +163,19 @@ func shouldDisplayAssistantWithTools(entry map[string]interface{}, toolUseMap ma
 	toolFilterList := parseCommaSeparated(cfg.ToolFilter)
 	toolExcludeList := parseCommaSeparated(cfg.ToolExclude)
 
-	// If no tool filters, show all assistant messages
-	if len(toolFilterList) == 0 && len(toolExcludeList) == 0 {
+	// If no tool include filters, show all assistant messages (but still apply exclude filters)
+	if len(toolFilterList) == 0 {
+		if len(toolExcludeList) == 0 {
+			return true
+		}
+		
+		// Only exclude filters specified - check if any tools should be excluded
+		for _, item := range extractToolsFromContent(entry) {
+			toolName := getToolName(item, toolUseMap)
+			if isToolExcluded(toolName, parseCommaSeparated(cfg.ToolExclude)) {
+				return false
+			}
+		}
 		return true
 	}
 
@@ -196,20 +210,22 @@ func shouldDisplayAssistantWithTools(entry map[string]interface{}, toolUseMap ma
 func shouldDisplayUserWithToolResult(entry map[string]interface{}, toolUseMap map[string]string) bool {
 	filterRoles := parseCommaSeparated(cfg.Role)
 	toolFilterList := parseCommaSeparated(cfg.ToolFilter)
-	toolExcludeList := parseCommaSeparated(cfg.ToolExclude)
-	hasToolFilters := len(toolFilterList) > 0 || len(toolExcludeList) > 0
+	hasToolIncludeFilters := len(toolFilterList) > 0
 
-	// If tool filters are specified, only show user messages with matching tool results
-	if hasToolFilters {
+	// If tool include filters are specified, only show user messages with matching tool results
+	if hasToolIncludeFilters {
 		if hasToolResult(entry) {
 			return shouldDisplayToolResultInUser(entry, toolUseMap)
 		}
-		// Regular user messages are not shown when tool filters are active
+		// Regular user messages are not shown when tool include filters are active
 		return false
 	}
 
-	// If no role filters, show all
+	// If no role filters, show all (but still check tool exclude filters)
 	if len(filterRoles) == 0 {
+		if hasToolResult(entry) {
+			return shouldDisplayToolResultInUser(entry, toolUseMap)
+		}
 		return true
 	}
 
@@ -341,3 +357,26 @@ func matchGlobRecursive(pattern, str string, pIdx, sIdx int) bool {
 
 	return false
 }
+
+// Extract tools from message content
+func extractToolsFromContent(entry map[string]interface{}) []map[string]interface{} {
+	message, ok := entry["message"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	content, ok := message["content"].([]interface{})
+	if !ok {
+		return nil
+	}
+
+	var tools []map[string]interface{}
+	for _, item := range content {
+		m, ok := item.(map[string]interface{})
+		if ok && m["type"] == "tool_use" {
+			tools = append(tools, m)
+		}
+	}
+	return tools
+}
+

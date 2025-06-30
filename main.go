@@ -31,6 +31,7 @@ type Config struct {
 	StatsCurrent  bool
 	ShowInfoAll   bool
 	Compact       bool
+	NoTools       bool
 }
 
 var cfg Config
@@ -56,6 +57,7 @@ func setupLogFlags(logCmd *flag.FlagSet) {
 	logCmd.StringVar(&cfg.ToolFilter, "tool", "", "filter by tool name (supports glob: Bash,*Edit,Todo*)")
 	logCmd.BoolVar(&cfg.ShowAllTools, "tools", false, "show all tool calls (equivalent to --tool '*')")
 	logCmd.StringVar(&cfg.ToolExclude, "tool-exclude", "", "exclude tools by name (supports glob)")
+	logCmd.BoolVar(&cfg.NoTools, "no-tools", false, "hide all tool calls (equivalent to --tool-exclude '*')")
 	logCmd.BoolVar(&cfg.ShowCost, "cost", false, "show token costs (fetches latest pricing)")
 	logCmd.BoolVar(&cfg.ShowTiming, "timing", false, "show timing information between messages")
 	logCmd.StringVar(&cfg.OutputFormat, "format", "text", "output format (text, json)")
@@ -169,6 +171,11 @@ func runLogCommand(args []string) {
 	// If --tools was set, set tool filter to show all tools
 	if cfg.ShowAllTools {
 		cfg.ToolFilter = "*"
+	}
+
+	// If --no-tools was set, set tool exclude to hide all tools
+	if cfg.NoTools {
+		cfg.ToolExclude = "*"
 	}
 
 	// Disable colors for JSON output
