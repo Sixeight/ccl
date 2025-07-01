@@ -168,7 +168,7 @@ func shouldDisplayAssistantWithTools(entry map[string]interface{}, toolUseMap ma
 		if len(toolExcludeList) == 0 {
 			return true
 		}
-		
+
 		// Only exclude filters specified - check if any tools should be excluded
 		for _, item := range extractToolsFromContent(entry) {
 			toolName := getToolName(item, toolUseMap)
@@ -379,4 +379,3 @@ func extractToolsFromContent(entry map[string]interface{}) []map[string]interfac
 	}
 	return tools
 }
-

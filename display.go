@@ -13,15 +13,17 @@ var lastTimestamp time.Time
 
 // Color codes
 const (
-	colorReset  = "\033[0m"
-	colorRed    = "\033[31m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-	colorBlue   = "\033[34m"
-	colorPurple = "\033[35m"
-	colorCyan   = "\033[36m"
-	colorGray   = "\033[90m"
-	colorBold   = "\033[1m"
+	colorReset      = "\033[0m"
+	colorRed        = "\033[31m"
+	colorGreen      = "\033[32m"
+	colorYellow     = "\033[33m"
+	colorBlue       = "\033[34m"
+	colorPurple     = "\033[35m"
+	colorCyan       = "\033[36m"
+	colorGray       = "\033[90m"
+	colorBold       = "\033[1m"
+	colorLightBlue  = "\033[94m"
+	colorLightGreen = "\033[92m"
 )
 
 // Helper function to apply color
@@ -152,6 +154,7 @@ func displayEntryWithToolInfo(entry map[string]interface{}, toolUseMap map[strin
 	msgType, _ := entry["type"].(string)
 	timestamp, _ := entry["timestamp"].(string)
 	version, _ := entry["version"].(string)
+	isSidechain, _ := entry["isSidechain"].(bool)
 
 	// Check if this entry should be displayed based on filters
 	if !shouldDisplayEntryWithToolInfo(msgType, entry, toolUseMap) {
@@ -172,9 +175,9 @@ func displayEntryWithToolInfo(entry map[string]interface{}, toolUseMap map[strin
 	// Note: "tool" type doesn't exist in the data, tool results are in "user" messages
 	switch msgType {
 	case "user":
-		displayUserMessage(entry, timeStr, versionStr, toolUseMap, toolInputMap)
+		displayUserMessage(entry, timeStr, versionStr, toolUseMap, toolInputMap, isSidechain)
 	case "assistant":
-		displayAssistantMessage(entry, timeStr, versionStr)
+		displayAssistantMessage(entry, timeStr, versionStr, isSidechain)
 	}
 }
 
@@ -186,138 +189,202 @@ func formatVersionInfo(version string) string {
 	return fmt.Sprintf(" %sv%s%s", color(colorGray), version, colorReset)
 }
 
+// Check if message is a tool result
+func isToolResultMessage(message map[string]interface{}) bool {
+	contents := extractContent(message)
+	for _, content := range contents {
+		if content["type"] == "tool_result" {
+			return true
+		}
+	}
+	return false
+}
+
+// Check if message is a slash command
+func isSlashCommandMessage(message map[string]interface{}) bool {
+	contents := extractContent(message)
+	for _, content := range contents {
+		if content["type"] == "text" {
+			if text, ok := content["text"].(string); ok {
+				// Slash commands are wrapped in <command-name> tags
+				return strings.Contains(text, "<command-name>") && strings.Contains(text, "</command-name>")
+			}
+			break
+		}
+	}
+	return false
+}
+
+// Display user message in normal mode
+func displayUserMessageNormal(message map[string]interface{}, timeStr, versionStr string, isSidechain, isSlashCommand bool) {
+	userColor := colorBlue + colorBold
+	if isSidechain {
+		userColor = colorLightBlue + colorBold
+	}
+	fmt.Printf("%s[%s]%s %sUSER%s",
+		color(colorGray), timeStr, versionStr,
+		color(userColor), colorReset)
+
+	// Add [SIDECHAIN] label for sidechain messages
+	if isSidechain {
+		fmt.Printf(" %s[SIDECHAIN]%s", color(colorYellow), colorReset)
+	}
+
+	// Add [COMMAND] label for slash commands
+	if isSlashCommand {
+		fmt.Printf(" %s[COMMAND]%s", color(colorPurple), colorReset)
+	}
+
+	fmt.Println()
+	displayMessageContent(message, "  ")
+	fmt.Println()
+}
+
+// Display user message in compact mode
+func displayUserMessageCompact(message map[string]interface{}, timeStr, versionStr string, isSidechain bool) {
+	userColor := colorBlue + colorBold
+	if isSidechain {
+		userColor = colorLightBlue + colorBold
+	}
+	roleName := "USER"
+	if isSidechain {
+		roleName = "USER*SC"
+	}
+	fmt.Printf("%s[%s]%s %s%-9s%s - ",
+		color(colorGray), timeStr, colorReset,
+		color(userColor), roleName, colorReset)
+
+	summary := getMessageSummary(message)
+	if summary != "" {
+		fmt.Printf("%s\n", summary)
+	} else {
+		fmt.Printf("\n")
+	}
+}
+
 // Display user message
-func displayUserMessage(entry map[string]interface{}, timeStr, versionStr string, toolUseMap map[string]string, toolInputMap map[string]map[string]interface{}) {
+func displayUserMessage(entry map[string]interface{}, timeStr, versionStr string, toolUseMap map[string]string, toolInputMap map[string]map[string]interface{}, isSidechain bool) {
 	message, ok := entry["message"].(map[string]interface{})
 	if !ok {
 		return
 	}
 
-	// Check if this is a tool result message
-	contents := extractContent(message)
-	isToolResult := false
-	for _, content := range contents {
-		if content["type"] == "tool_result" {
-			isToolResult = true
-			break
-		}
-	}
-
-	if isToolResult {
+	if isToolResultMessage(message) {
 		// Display as TOOL message
 		toolUseResult, _ := entry["toolUseResult"].(map[string]interface{})
-		displayToolResultSimple(message, timeStr, versionStr, toolUseMap, toolInputMap, toolUseResult)
+		displayToolResultSimple(message, timeStr, versionStr, toolUseMap, toolInputMap, toolUseResult, isSidechain)
+		return
+	}
+
+	// Display as regular USER message
+	isSlashCommand := isSlashCommandMessage(message)
+	if !cfg.Compact {
+		displayUserMessageNormal(message, timeStr, versionStr, isSidechain, isSlashCommand)
 	} else {
-		// Check if this is a slash command
-		isSlashCommand := false
-		contents := extractContent(message)
-		for _, content := range contents {
-			if content["type"] == "text" {
-				if text, ok := content["text"].(string); ok {
-					// Slash commands are wrapped in <command-name> tags
-					if strings.Contains(text, "<command-name>") && strings.Contains(text, "</command-name>") {
-						isSlashCommand = true
-					}
-					break
-				}
-			}
+		displayUserMessageCompact(message, timeStr, versionStr, isSidechain)
+	}
+}
+
+// Display usage and cost info for assistant message
+func displayAssistantUsageInfo(message map[string]interface{}) {
+	usage, ok := message["usage"].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	// Always show brief token info
+	inputTokens, hasInput := getTokenCount(usage, "input_tokens")
+	outputTokens, hasOutput := getTokenCount(usage, "output_tokens")
+	if !hasInput || !hasOutput {
+		return
+	}
+
+	fmt.Printf(" [↑%d ↓%d", inputTokens, outputTokens)
+
+	// Show cache info if available
+	if cacheRead, ok := getTokenCount(usage, "cache_read_input_tokens"); ok && cacheRead > 0 {
+		fmt.Printf(" *%d", cacheRead)
+	}
+	if cacheCreate, ok := getTokenCount(usage, "cache_creation_input_tokens"); ok && cacheCreate > 0 {
+		fmt.Printf(" +%d", cacheCreate)
+	}
+
+	// Calculate and show cost if requested
+	if cfg.ShowCost {
+		modelName := ""
+		if model, ok := message["model"].(string); ok {
+			modelName = model
 		}
-
-		// Display as regular USER message
-		if !cfg.Compact {
-			fmt.Printf("%s[%s]%s %sUSER%s",
-				color(colorGray), timeStr, versionStr,
-				color(colorBlue+colorBold), colorReset)
-
-			// Add [COMMAND] label for slash commands
-			if isSlashCommand {
-				fmt.Printf(" %s[COMMAND]%s", color(colorPurple), colorReset)
-			}
-
-			fmt.Println()
-			displayMessageContent(message, "  ")
-			fmt.Println()
-		} else {
-			// Compact mode: fixed width role display
-			fmt.Printf("%s[%s]%s %s%-9s%s - ",
-				color(colorGray), timeStr, colorReset,
-				color(colorBlue+colorBold), "USER", colorReset)
-
-			summary := getMessageSummary(message)
-			if summary != "" {
-				fmt.Printf("%s\n", summary)
-			} else {
-				fmt.Printf("\n")
-			}
+		cost := calculateCost(usage, modelName)
+		if cost > 0 {
+			fmt.Printf(" $%.4f", cost)
 		}
+	}
+	fmt.Printf("]")
+}
+
+// Display assistant message in normal mode
+func displayAssistantMessageNormal(message map[string]interface{}, timeStr, versionStr string, isSidechain bool) {
+	assistantColor := colorGreen + colorBold
+	if isSidechain {
+		assistantColor = colorLightGreen + colorBold
+	}
+	fmt.Printf("%s[%s]%s %sASSISTANT%s",
+		color(colorGray), timeStr, versionStr,
+		color(assistantColor), colorReset)
+
+	// Add [SIDECHAIN] label for sidechain messages
+	if isSidechain {
+		fmt.Printf(" %s[SIDECHAIN]%s", color(colorYellow), colorReset)
+	}
+
+	// Check for model info
+	if model, ok := message["model"].(string); ok {
+		fmt.Printf(" %s(%s)%s", color(colorGray), model, colorReset)
+	}
+
+	// Display usage info if available
+	displayAssistantUsageInfo(message)
+
+	fmt.Println()
+	displayMessageContent(message, "  ")
+	fmt.Println()
+}
+
+// Display assistant message in compact mode
+func displayAssistantMessageCompact(message map[string]interface{}, timeStr, versionStr string, isSidechain bool) {
+	assistantColor := colorGreen + colorBold
+	if isSidechain {
+		assistantColor = colorLightGreen + colorBold
+	}
+	roleName := "ASSISTANT"
+	if isSidechain {
+		roleName = "ASST*SC"
+	}
+	fmt.Printf("%s[%s]%s %s%-9s%s - ",
+		color(colorGray), timeStr, colorReset,
+		color(assistantColor), roleName, colorReset)
+
+	// Show brief summary in compact mode
+	summary := getMessageSummary(message)
+	if summary != "" {
+		fmt.Printf("%s\n", summary)
+	} else {
+		fmt.Printf("\n")
 	}
 }
 
 // Display assistant message
-func displayAssistantMessage(entry map[string]interface{}, timeStr, versionStr string) {
+func displayAssistantMessage(entry map[string]interface{}, timeStr, versionStr string, isSidechain bool) {
 	message, ok := entry["message"].(map[string]interface{})
 	if !ok {
 		return
 	}
 
-	// Display header
 	if !cfg.Compact {
-		fmt.Printf("%s[%s]%s %sASSISTANT%s",
-			color(colorGray), timeStr, versionStr,
-			color(colorGreen+colorBold), colorReset)
-
-		// Check for model info
-		if model, ok := message["model"].(string); ok {
-			fmt.Printf(" %s(%s)%s", color(colorGray), model, colorReset)
-		}
-
-		// Display usage info if available
-		if usage, ok := message["usage"].(map[string]interface{}); ok {
-			// Always show brief token info
-			if inputTokens, ok := getTokenCount(usage, "input_tokens"); ok {
-				if outputTokens, ok := getTokenCount(usage, "output_tokens"); ok {
-					fmt.Printf(" [↑%d ↓%d", inputTokens, outputTokens)
-
-					// Show cache info if available
-					if cacheRead, ok := getTokenCount(usage, "cache_read_input_tokens"); ok && cacheRead > 0 {
-						fmt.Printf(" *%d", cacheRead)
-					}
-					if cacheCreate, ok := getTokenCount(usage, "cache_creation_input_tokens"); ok && cacheCreate > 0 {
-						fmt.Printf(" +%d", cacheCreate)
-					}
-
-					// Calculate and show cost if requested
-					if cfg.ShowCost {
-						modelName := ""
-						if model, ok := message["model"].(string); ok {
-							modelName = model
-						}
-						cost := calculateCost(usage, modelName)
-						if cost > 0 {
-							fmt.Printf(" $%.4f", cost)
-						}
-					}
-					fmt.Printf("]")
-				}
-			}
-		}
-
-		fmt.Println()
-		displayMessageContent(message, "  ")
-		fmt.Println()
+		displayAssistantMessageNormal(message, timeStr, versionStr, isSidechain)
 	} else {
-		// Compact mode: fixed width role display, no metadata
-		fmt.Printf("%s[%s]%s %s%-9s%s - ",
-			color(colorGray), timeStr, colorReset,
-			color(colorGreen+colorBold), "ASSISTANT", colorReset)
-
-		// Show brief summary in compact mode
-		summary := getMessageSummary(message)
-		if summary != "" {
-			fmt.Printf("%s\n", summary)
-		} else {
-			fmt.Printf("\n")
-		}
+		displayAssistantMessageCompact(message, timeStr, versionStr, isSidechain)
 	}
 }
 
@@ -670,16 +737,26 @@ func displayTodoWriteCompact(toolInput map[string]interface{}) {
 }
 
 // Display tool result from user message (simplified version)
-func displayToolResultSimple(message map[string]interface{}, timeStr, versionStr string, toolUseMap map[string]string, toolInputMap map[string]map[string]interface{}, toolUseResult map[string]interface{}) {
+func displayToolResultSimple(message map[string]interface{}, timeStr, versionStr string, toolUseMap map[string]string, toolInputMap map[string]map[string]interface{}, toolUseResult map[string]interface{}, isSidechain bool) {
 	// Get tool name and input
 	toolName := getToolNameFromResult(message, toolUseMap)
 	toolInput := getToolInputForResult(message, toolInputMap)
 
 	// Display header
 	if !cfg.Compact {
+		toolColor := colorCyan + colorBold
+		if isSidechain {
+			toolColor = colorPurple + colorBold
+		}
 		fmt.Printf("%s[%s]%s %sTOOL%s",
 			color(colorGray), timeStr, versionStr,
-			color(colorCyan+colorBold), colorReset)
+			color(toolColor), colorReset)
+
+		// Add [SIDECHAIN] label for sidechain messages
+		if isSidechain {
+			fmt.Printf(" %s[SIDECHAIN]%s", color(colorYellow), colorReset)
+		}
+
 		if toolName != "" {
 			fmt.Printf(" %s(%s)%s", color(colorGray), toolName, colorReset)
 		}
@@ -690,9 +767,17 @@ func displayToolResultSimple(message map[string]interface{}, timeStr, versionStr
 	}
 
 	// Compact mode
+	toolColor := colorCyan + colorBold
+	if isSidechain {
+		toolColor = colorPurple + colorBold
+	}
+	roleName := "TOOL"
+	if isSidechain {
+		roleName = "TOOL*SC"
+	}
 	fmt.Printf("%s[%s]%s %s%-9s%s - ",
 		color(colorGray), timeStr, colorReset,
-		color(colorCyan+colorBold), "TOOL", colorReset)
+		color(toolColor), roleName, colorReset)
 	displayToolResultCompact(message, toolName, toolInput)
 }
 
